@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <strong>Product Grabber</strong>
+    <button id="settingsBtn" class="ghost" title="Cài đặt">⚙</button>
+  </header>
+
+  <section id="settings" hidden>
+    <label>Endpoint gửi dữ liệu (Supabase Edge Function / n8n webhook)
+      <input id="endpoint" type="url" placeholder="https://xxx.supabase.co/functions/v1/save-product" />
+    </label>
+    <label>Header Authorization (tuỳ chọn)
+      <input id="authHeader" type="text" placeholder="Bearer eyJ..." />
+    </label>
+    <button id="saveSettings">Lưu</button>
+  </section>
+
+  <div id="status">Đang đọc trang…</div>
+
+  <section id="result" hidden>
+    <h1 id="title"></h1>
+    <div class="meta">
+      <span id="price" class="price"></span>
+      <span id="original" class="original"></span>
+      <span id="discount" class="discount"></span>
+    </div>
+    <div class="meta small" id="extra"></div>
+
+    <div class="row">
+      <span class="small"><span id="imgCount"></span> ảnh • bấm để chọn/bỏ</span>
+      <button id="toggleAll" class="ghost small">Bỏ chọn hết</button>
+    </div>
+    <div id="grid"></div>
+
+    <div id="videoRow" class="small"></div>
+
+    <div class="actions">
+      <button id="download">Tải ảnh + video</button>
+      <button id="copy" class="secondary">Copy JSON</button>
+      <button id="send" class="secondary" hidden>Gửi sang app</button>
+    </div>
+  </section>
+
+  <script src="extractor.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
