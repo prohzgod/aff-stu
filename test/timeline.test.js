@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   LIMITS, SAMPLE_RATE, segmentDuration, totalDuration, clampTrim, moveSegment, validateTimeline,
-  outputFps, buildSchedule, frameSourceTime, fitRect, kenBurnsScale, locate,
+  outputFps, buildSchedule, frameSourceTime, fitRect, kenBurnsScale, locate, headSegments, enhanceScale,
 } from "../public/editor/timeline.js";
 
 const clip = (o = {}) => ({ id: "c", type: "clip", srcDuration: 10, fps: 24, in: 0, out: 10, muted: false, fit: "cover", ...o });
@@ -118,4 +118,29 @@ test("locate: thời điểm trên timeline → đoạn nào, giây thứ mấy 
   assert.equal(locate(segs, 99).index, 2);
   assert.equal(locate(segs, -1).index, 0);
   assert.equal(locate([], 1), null);
+});
+
+test("headSegments: lấy phần đầu của timeline dài tối đa N giây, cắt đoạn cuối cho vừa", () => {
+  const segs = [clip({ id: "a", in: 1, out: 2.5 }), image({ id: "b", duration: 1 }), clip({ id: "c", in: 0, out: 5 })];
+  const head = headSegments(segs, 2);
+  assert.deepEqual(head.map((s) => s.id), ["a", "b"]);
+  assert.deepEqual([head[0].in, head[0].out, head[1].duration], [1, 2.5, 0.5]);
+  assert.equal(totalDuration(head), 2);
+  const mid = headSegments(segs, 3);
+  assert.deepEqual([mid.length, mid[2].in, mid[2].out], [3, 0, 0.5]);
+  assert.equal(headSegments(segs, 99).length, 3);
+  assert.equal(totalDuration(headSegments(segs, 99)), totalDuration(segs));
+  assert.deepEqual(headSegments([], 2), []);
+  assert.equal(segs[1].duration, 1); // không sửa mảng gốc
+  // phần dư ngắn hơn mức tối thiểu thì bỏ, không tạo đoạn 0 giây
+  assert.deepEqual(headSegments([clip({ id: "a", in: 0, out: 2 }), clip({ id: "b", in: 0, out: 5 })], 2.05).map((s) => s.id), ["a"]);
+});
+
+test("enhanceScale: phóng nguồn nhỏ hơn 1080 lên vừa đủ, tối đa 2 lần; nguồn đủ lớn thì giữ nguyên", () => {
+  assert.equal(enhanceScale(720), 1.5);
+  assert.equal(enhanceScale(540), 2);
+  assert.equal(enhanceScale(360), 2);
+  assert.equal(enhanceScale(1080), 1);
+  assert.equal(enhanceScale(2160), 1);
+  assert.equal(enhanceScale(0), 1);
 });

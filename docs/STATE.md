@@ -1,8 +1,19 @@
 # Trạng thái
 
-**Phase hiện tại:** 8 · Đồng bộ & dựng hàng loạt — code xong. Mọi phase từ 1 đến 8 đang chờ chủ dự án deploy và kiểm trên thiết bị thật (chủ dự án đã bảo làm hết các phase rồi mới test)
+**Phase hiện tại:** 8.5 · Enhance AI — ĐANG LÀM DỞ. Phase 1 đến 8 code xong, chờ chủ dự án deploy và kiểm trên thiết bị thật
 **Thiết kế:** docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
-**Việc kế tiếp:** Phase 8.5 (Enhance AI bằng WebSR/WebGPU)
+**Việc kế tiếp:** nối `public/editor/enhance.js` vào `render-worker.js` và trình dựng (xem checklist phase 8.5)
+
+## Checklist phase 8.5
+- [x] Đưa WebSR 0.1.1 và trọng số `websr/cnn-m` vào `public/editor/vendor/` (sha256 của trọng số khớp tài liệu WebSR)
+- [x] `headSegments`, `enhanceScale` trong `timeline.js` (có test)
+- [x] `public/editor/enhance.js`: bộ làm nét WebGL2 (chế độ Chuẩn) và bộ Enhance AI (WebSR/WebGPU). ĐÃ VIẾT NHƯNG CHƯA CHẠY THỬ LẦN NÀO, chưa được import ở đâu
+- [ ] `render-worker.js`: nhận `job.quality` ("standard" | "ai"), đưa frame clip/ảnh hẹp hơn 1080 qua enhancer trước `composeFrame`; `capabilities` trả thêm `enhance`
+- [ ] Trình dựng: chọn chế độ ở khu Xuất (ẩn Enhance AI khi không có WebGPU), nút "So sánh" dựng 2 giây đầu ở cả hai chế độ
+- [ ] `scripts/ui-check.mjs`: xuất ở chế độ AI, kiểm file; kiểm nút So sánh
+- [ ] Ghi `vendor/README.md` (WebSR MIT, trọng số), spec, decisions, nghiệm thu, commit
+
+Ghi chú cho người làm tiếp: Chrome headless trên máy dev có WebGPU và WebGL2 trong worker (đã thử). WebSR là bản UMD: trong module worker dùng `await import()` rồi lấy `self.WebSR`. Sau `websr.render()` phải chép canvas WebGPU sang canvas 2D ngay (đã làm trong `holder()`).
 
 ## Checklist phase 8
 - [x] `GET/PUT /api/products/:id/edit` (`edit.json`): lưu dự án dựng, chỉ giữ trường đã biết

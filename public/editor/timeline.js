@@ -114,3 +114,27 @@ export function locate(segments, t) {
   }
   return null;
 }
+
+// Phần đầu của timeline, dài tối đa `seconds` giây (dùng cho nút "So sánh" hai chế độ xuất).
+export function headSegments(segments, seconds) {
+  const out = [];
+  let left = seconds;
+  for (const seg of segments) {
+    if (left < MIN_SEGMENT) break;
+    const dur = segmentDuration(seg);
+    if (dur <= left) {
+      out.push({ ...seg });
+      left -= dur;
+    } else {
+      out.push(seg.type === "clip" ? { ...seg, out: seg.in + left } : { ...seg, duration: left });
+      break;
+    }
+  }
+  return out;
+}
+
+// Hệ số phóng hình nguồn trước khi ghép: nguồn hẹp hơn khung thì phóng cho vừa chiều rộng, tối đa 2 lần.
+export function enhanceScale(sourceWidth) {
+  if (!(sourceWidth > 0) || sourceWidth >= OUTPUT.width) return 1;
+  return Math.min(2, OUTPUT.width / sourceWidth);
+}
