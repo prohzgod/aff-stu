@@ -34,6 +34,7 @@ npx wrangler r2 bucket lifecycle add affiliate-studio expire-i i/ --expire-days 
 npx wrangler pages project create affiliate-studio
 npx wrangler pages secret put APP_TOKEN      # chuỗi ngẫu nhiên, ít nhất 32 ký tự
 npx wrangler pages secret put LLM_API_KEY    # tuỳ chọn: key Google AI Studio
+npx wrangler pages secret put GROQ_API_KEY   # tuỳ chọn: key console.groq.com, cho phụ đề tự động
 ```
 
 Tạo token ngẫu nhiên: `openssl rand -hex 24`.
@@ -49,7 +50,6 @@ Ghi chú:
 - Hai rule lifecycle chỉ xoá `p/` (sản phẩm) và `i/` (chỉ mục). Thư mục `cfg/` dành cho brand kit sau này, không bị xoá.
 - Rule chạy theo ngày nên có thể trễ vài giờ. App tự ẩn sản phẩm quá 7 ngày, không phụ thuộc rule.
 - Bật R2 có thể cần thêm phương thức thanh toán dù chỉ dùng mức miễn phí (10 GB, 1 triệu lượt ghi, 10 triệu lượt đọc mỗi tháng).
-- `GROQ_API_KEY` chưa cần: nó dành cho phụ đề tự động của module Hậu kỳ, chưa làm.
 
 ## Cấu hình
 
@@ -57,6 +57,8 @@ Ghi chú:
 |---|---|---|
 | `APP_TOKEN` | secret | Token dùng chung cho web, điện thoại và extension |
 | `LLM_API_KEY` | secret, tuỳ chọn | Key Google AI Studio. Không có thì app dùng gói dựng sẵn và chế độ thủ công |
+| `GROQ_API_KEY` | secret, tuỳ chọn | Key Groq cho phụ đề tự động (Whisper). Không có thì dùng lời thoại từ kịch bản rồi sửa tay |
+| `GROQ_MODEL` | `wrangler.toml`, tuỳ chọn | Mặc định `whisper-large-v3`; đổi sang `whisper-large-v3-turbo` nếu cần nhanh và rẻ hơn |
 | `LLM_MODEL` | `wrangler.toml` | Model Gemini, mặc định `gemini-3.8-flash` |
 | `LLM_BASE_URL` | `wrangler.toml` | Endpoint kiểu OpenAI của Gemini |
 | `RETENTION_DAYS` | `wrangler.toml` | Số ngày giữ sản phẩm, mặc định 7. Đổi số này thì đổi cả hai rule lifecycle |
@@ -89,6 +91,8 @@ App cài từ màn hình chính có bộ nhớ riêng, nên cần nhập token l
 | Dòng nguồn ghi "AI đã hết hạn mức miễn phí (lỗi 429)" | Hết quota Gemini miễn phí | Đợi, đổi `LLM_MODEL` sang `gemini-3.5-flash-lite`, hoặc dùng chế độ thủ công |
 | Dòng nguồn ghi "Không gọi được AI (http 404)" | Tên model không còn tồn tại | Tra model Flash miễn phí hiện tại, sửa `LLM_MODEL` trong `wrangler.toml`, deploy lại |
 | Dòng nguồn ghi "Chưa cấu hình AI" | Chưa đặt `LLM_API_KEY` | `npx wrangler pages secret put LLM_API_KEY` rồi deploy lại |
+| Phụ đề báo "Chưa cấu hình GROQ_API_KEY" | Chưa đặt key Groq | `npx wrangler pages secret put GROQ_API_KEY` rồi deploy lại, hoặc bấm "Dùng lời thoại từ kịch bản" |
+| Phụ đề báo "hết hạn mức" | Hết quota Groq miễn phí | Đợi, hoặc dùng lời thoại từ kịch bản |
 | Sản phẩm biến mất | Đã quá 7 ngày | Gửi lại từ extension |
 
 ## Cấu trúc

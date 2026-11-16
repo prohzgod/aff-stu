@@ -117,6 +117,9 @@ async function brandSection() {
     [["tl", "Trên, bên trái"], ["tr", "Trên, bên phải"], ["bl", "Dưới, bên trái"], ["br", "Dưới, bên phải"]]
       .map(([value, label]) => h("option", { value, selected: brand.position === value }, label)));
   const enabled = h("input", { id: "brand-watermark", type: "checkbox", checked: brand.watermark });
+  const subtitleStyle = h("select", { id: "brand-subs" },
+    [["karaoke", "Karaoke (tô màu từ đang nói)"], ["box", "Hộp nền"], ["minimal", "Tối giản"]]
+      .map(([value, label]) => h("option", { value, selected: brand.subtitleStyle === value }, label)));
   const logoFile = h("input", { id: "brand-logo", type: "file", accept: "image/*", hidden: true });
   const preview = h("div", { class: "brand-logo" });
   const message = h("p", { class: "field-error", hidden: true });
@@ -143,7 +146,7 @@ async function brandSection() {
     e.preventDefault();
     save.disabled = true;
     try {
-      await api("/api/brandkit", { method: "PUT", body: { handle: handle.value, position: position.value, watermark: enabled.checked, logo } });
+      await api("/api/brandkit", { method: "PUT", body: { handle: handle.value, position: position.value, watermark: enabled.checked, logo, subtitleStyle: subtitleStyle.value } });
       message.hidden = true;
       toast("Đã lưu brand kit");
     } catch (err) {
@@ -159,6 +162,7 @@ async function brandSection() {
     h("div", { class: "field" }, h("label", {}, "Logo"), preview, logoFile, h("div", { class: "row" }, h("button", { class: "btn small", type: "button", onclick: () => logoFile.click() }, "Chọn ảnh logo"))),
     h("div", { class: "field" }, h("label", { for: "brand-position" }, "Vị trí watermark"), position),
     h("label", { class: "check" }, enabled, "Chèn watermark vào video"),
+    h("div", { class: "field" }, h("label", { for: "brand-subs" }, "Kiểu phụ đề mặc định"), subtitleStyle),
     message,
     save,
   );
@@ -436,6 +440,7 @@ async function viewDetail(id, seq) {
   const finalName = `${slug(shortName(data.product.title))}.mp4`;
   const coverItem = data.cover && { stored: data.cover.url.replace(/^\/media\//, "") };
   const coverName = `${slug(shortName(data.product.title))}_bia.png`;
+  const subsItem = data.subs && { stored: data.subs.url.replace(/^\/media\//, "") };
   const hasOutput = Boolean(data.final || data.cover);
   const finalSection = h("section", { class: "card final" },
     h("div", { class: "row" },
@@ -454,6 +459,7 @@ async function viewDetail(id, seq) {
           ),
         )
       : h("p", { class: "muted" }, "Ghép các clip từ Google Flow thành một video 1080x1920 để đăng. Nên dựng trên máy tính."),
+    subsItem && h("div", { class: "row wrap final-subs" }, h("span", { class: "muted" }, "Phụ đề (.srt)"), downloadLink(subsItem, `${slug(shortName(data.product.title))}.srt`, "phụ đề")),
   );
   const pkgState = { pkg: data.package };
   const packageBox = h("div", { class: "pkg" });

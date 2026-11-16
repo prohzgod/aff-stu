@@ -1,8 +1,17 @@
 # Trạng thái
 
-**Phase hiện tại:** 6 · Chữ trên video & ảnh bìa — code xong. Mọi phase từ 1 đến 6 đang chờ chủ dự án deploy và kiểm trên thiết bị thật (chủ dự án đã bảo làm hết các phase rồi mới test)
+**Phase hiện tại:** 7 · Phụ đề tự động — code xong. Mọi phase từ 1 đến 7 đang chờ chủ dự án deploy và kiểm trên thiết bị thật (chủ dự án đã bảo làm hết các phase rồi mới test)
 **Thiết kế:** docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
-**Việc kế tiếp:** Phase 7 (phụ đề tự động)
+**Việc kế tiếp:** Phase 8 (đồng bộ `edit.json`, dựng hàng loạt), rồi phase 8.5 (Enhance AI)
+
+## Checklist phase 7
+- [x] Worker tách tiếng của timeline thành WAV 16kHz mono
+- [x] `POST /api/transcribe`: Groq Whisper (mốc từng từ) + LLM sửa dấu câu, sai số từ thì bỏ bản sửa
+- [x] `subtitles.js`: chia dòng theo 3 kiểu, sửa chữ, dời ±0,1 giây, tách, gộp, SRT
+- [x] Khối "Phụ đề" trong trình dựng; dự phòng "Dùng lời thoại từ kịch bản"
+- [x] In phụ đề vào video; `subs.srt` lưu kèm khi "Lưu lên kho"; link tải trên trang sản phẩm
+- [x] Kiểu phụ đề mặc định trong brand kit
+- [x] Nghiệm thu phần kiểm được trên máy dev
 
 ## Checklist phase 6
 - [x] `overlays.js`: chữ hook (3 giây đầu), sticker giá (3 giây cuối), CTA (2,5 giây cuối), tự thu chữ và xuống dòng, luôn trong vùng an toàn
@@ -61,6 +70,18 @@
 (chưa có)
 
 ## Nghiệm thu gần nhất
+
+**2026-11-16 · Phase 7 · trên máy dev**
+
+Đã chạy và đạt: `npm test` 213/213; `node scripts/ui-check.mjs` 111/111. Trong Chrome thật: tiếng gửi đi phiên âm là WAV 16kHz mono dài đúng 6 giây và có tiếng; phụ đề từ kịch bản trải hết video; đổi kiểu thì chia lại dòng; sửa chữ, kéo dài, tách, gộp đều đúng; file xuất có phụ đề ở đầu, giữa và cuối (đọc lại điểm ảnh); `subs.srt` lưu kèm và đúng định dạng; chèn ảnh bìa sau đó thì có cảnh báo lệch thời gian.
+
+Tiêu chí ✅ của phase 7 ("Clip có lời thoại tiếng Việt: phụ đề lệch < 0,3s; tên thương hiệu viết đúng sau hậu xử lý"):
+- **Chưa kiểm được.** Máy dev không có `GROQ_API_KEY` nên chưa gọi Groq thật lần nào. Phần gọi Groq và phần sửa bằng LLM mới chạy với phản hồi giả lập (đúng tên trường theo tài liệu Groq tra ngày 16/11/2026). **Chờ chủ dự án kiểm.**
+
+**Chờ chủ dự án kiểm (phase 7):**
+1. Lấy key ở console.groq.com, thêm `GROQ_API_KEY=...` vào `.dev.vars` (hoặc `wrangler pages secret put GROQ_API_KEY`).
+2. Dựng một video từ clip Flow có lời thoại tiếng Việt, bấm "Tạo phụ đề tự động". Xem trước: chữ có khớp lời không (mục tiêu lệch dưới 0,3 giây), tên thương hiệu có đúng không.
+3. Nếu báo lỗi thì chép nguyên câu báo lỗi lại.
 
 **2026-11-16 · Phase 6 · trên máy dev**
 
@@ -170,6 +191,12 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 3. Mở app trên iPhone, nhập token, mở sản phẩm: ảnh hiện, video phát và tua được, tải thử một ảnh.
 4. Xem dòng ghi chú trong khối "Ảnh & video". Nếu có "N file chưa lưu được về kho" tức CDN thật từ chối server: báo lại để ghi vào `docs/memory/gotchas.md` và xử lý.
 
+## Tồn đọng nhỏ từ phase 7 (chưa sửa)
+- Phụ đề lấy mốc theo timeline lúc tạo. Đổi thứ tự, cắt hay chèn đoạn sau đó thì chỉ có cảnh báo, chưa tự dời mốc.
+- "Dùng lời thoại từ kịch bản" rải đều chữ theo thời lượng cả video, không biết clip nào nói câu nào.
+- Nút "Tách" cắt ở giữa dòng, chưa chọn được vị trí cắt.
+- Chưa chỉnh được màu, cỡ, vị trí phụ đề ngoài ba kiểu có sẵn.
+
 ## Tồn đọng nhỏ từ phase 6 (chưa sửa)
 - Chọn frame làm nền ảnh bìa bằng thanh trượt và nút tiến/lùi từng frame; chưa có lưới thumbnail mỗi 0,5 giây như spec mục 9.6.
 - Chưa đổi được màu chữ ảnh bìa (mới đổi được nội dung, cỡ, vị trí, bố cục).
@@ -204,6 +231,5 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 - `scripts/ui-check.mjs` viết cứng đường dẫn Chrome trên macOS.
 
 ## Các phase sau
-- [ ] Phase 7: Phụ đề tự động
 - [ ] Phase 8: Đồng bộ `edit.json` & dựng hàng loạt (cần làm rõ lại phần batch với chủ dự án)
 - [ ] Phase 8.5: Enhance AI

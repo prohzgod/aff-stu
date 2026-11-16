@@ -3,6 +3,7 @@
 
 import { OUTPUT, SAFE, fitRect } from "./timeline.js";
 import { drawOverlays } from "./overlays.js";
+import { drawSubtitle } from "./subtitles.js";
 
 export { SAFE };
 
@@ -51,6 +52,7 @@ function drawWatermark(ctx, watermark) {
 //   fit: "cover" | "blur"
 //   zoom: số ≥ 1 (Ken Burns cho ảnh tĩnh)
 //   overlays: [{ kind: "hook" | "price" | "cta", text }]   các lớp chữ đang hiện ở thời điểm này
+//   subtitle: { active: kết quả activeLine() | null, style } | null   phụ đề đang hiện
 //   watermark: { handle, logo, position } | null
 // }
 export function composeFrame(ctx, frame) {
@@ -82,5 +84,6 @@ export function composeFrame(ctx, frame) {
     }
   }
   drawOverlays(ctx, frame.overlays); // chữ luôn vẽ thẳng ở 1080x1920, sau hình, nên luôn nét
+  if (frame.subtitle) drawSubtitle(ctx, frame.subtitle.active, frame.subtitle.style);
   drawWatermark(ctx, frame.watermark);
 }

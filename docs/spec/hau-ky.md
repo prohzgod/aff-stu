@@ -39,7 +39,7 @@ Clip/ảnh đầu vào (File từ máy, hoặc media trên R2)
 | Watermark | brand kit (logo hoặc @kênh) | góc trên-trái, opacity 70%, suốt video |
 | Phụ đề | `/api/transcribe` | xem 9.5 |
 
-**Vùng an toàn TikTok (khung 1080x1920):** chừa ~130px trên, ~480px dưới, ~140px phải (cột nút like/share), ~44px trái. Phụ đề đặt khoảng **y = 1100–1350**. Có nút "Xem lớp UI TikTok" để overlay giả lập giao diện TikTok khi preview.
+**Vùng an toàn TikTok (khung 1080x1920):** chừa ~130px trên, ~480px dưới, ~140px phải (cột nút like/share), ~44px trái. Phụ đề đặt với mép dưới ở **y = 1140** (tối đa 2 dòng), phía trên sticker giá (khoảng y 1160–1290) và CTA (khoảng y 1310–1430), để ba lớp không chồng nhau ở cuối video. Có nút "Xem lớp UI TikTok" để overlay giả lập giao diện TikTok khi preview.
 
 Font: **Be Vietnam Pro** (OFL, đủ dấu tiếng Việt) tự host `.woff2`; phải `await document.fonts.load(...)` (và trong worker dùng `FontFace` + `self.fonts.add`) trước khi vẽ, nếu không frame đầu sẽ bị font dự phòng.
 

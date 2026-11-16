@@ -1,4 +1,4 @@
-// Kiểm UI (phase 1–6) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
+// Kiểm UI (phase 1–7) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
 // Chạy: node scripts/ui-check.mjs [thư mục lưu ảnh chụp]
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from "node:fs";
@@ -277,6 +277,33 @@ try {
   check("bật 'Xem lớp UI TikTok' → vùng trên cùng bị phủ tối trên bản xem trước", await ev("document.querySelector('.ed-canvas').getContext('2d').getImageData(900, 20, 1, 1).data[0] < 200"));
   await ev("(() => { const c = document.querySelector('#ed-tiktok'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); })()");
 
+  // ----- phase 7: phụ đề -----
+  await ev("(() => { window.__wav = null; const f = window.fetch; window.fetch = async (u, o) => { if (String(u).startsWith('/api/transcribe')) window.__wav = o.body; return f(u, o); }; })()");
+  await ev("document.querySelector('[data-action=\"subs-auto\"]').click()");
+  await waitFor("document.querySelector('.subs-message.field-error')?.textContent.includes('GROQ_API_KEY')", "báo thiếu key Groq");
+  check("tạo phụ đề tự động khi chưa có key Groq → báo rõ lý do và gợi ý dùng lời thoại từ kịch bản", (await ev("document.querySelector('.subs-message').textContent")).includes("lời thoại từ kịch bản"));
+  const wavInfo = await ev("(async () => { const b = new Uint8Array(await window.__wav.arrayBuffer()); const v = new DataView(b.buffer); return { riff: String.fromCharCode(...b.slice(0, 4)) + String.fromCharCode(...b.slice(8, 12)), rate: v.getUint32(24, true), channels: v.getUint16(22, true), bytes: b.length, loud: (() => { let m = 0; for (let i = 44; i < 44 + 32000; i += 2) m = Math.max(m, Math.abs(v.getInt16(i, true))); return m; })() }; })()");
+  check("tiếng gửi đi phiên âm: WAV 16kHz mono dài đúng 6 giây, có tiếng của clip đầu", wavInfo.riff === "RIFFWAVE" && wavInfo.rate === 16000 && wavInfo.channels === 1 && Math.abs(wavInfo.bytes - (44 + 6 * 32000)) <= 64 && wavInfo.loud > 3000, JSON.stringify(wavInfo));
+  await ev("document.querySelector('[data-action=\"subs-script\"]').click()");
+  await waitFor("document.querySelectorAll('.sub-row').length > 3", "phụ đề từ kịch bản");
+  const karaokeRows = await ev("document.querySelectorAll('.sub-row').length");
+  check("dùng lời thoại từ kịch bản → có các dòng phụ đề trải từ giây 0 đến hết video", await ev("document.querySelector('[data-sub-start=\"0\"]').textContent === '0.0' && [...document.querySelectorAll('[data-sub-end]')].at(-1).textContent === '6.0' && !document.querySelector('.subs-message')"));
+  await ev("(() => { const s = document.querySelector('#subs-style'); s.value = 'box'; s.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  const boxRows = await ev("document.querySelectorAll('.sub-row').length");
+  check("đổi sang kiểu Hộp nền → chia lại thành ít dòng hơn (dòng dài hơn)", boxRows < karaokeRows, `${karaokeRows} → ${boxRows}`);
+  await ev("(() => { const s = document.querySelector('#subs-style'); s.value = 'karaoke'; s.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await ev("(() => { const t = document.querySelector('[data-sub-text=\"0\"]'); t.value = 'Dòng thử ấ'; t.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  check("sửa chữ dòng đầu → giữ nguyên thời gian của dòng", await ev("document.querySelector('[data-sub-text=\"0\"]').value === 'Dòng thử ấ' && document.querySelector('[data-sub-start=\"0\"]').textContent === '0.0'"));
+  const endBefore = await ev("document.querySelector('[data-sub-end=\"0\"]').textContent");
+  await ev("document.querySelector('.sub-row [aria-label=\"Kết thúc muộn hơn 0,1 giây\"]').click()");
+  check("nút + kéo dài dòng thêm 0,1 giây", (await ev("Number(document.querySelector('[data-sub-end=\"0\"]').textContent)")) === +(Number(endBefore) + 0.1).toFixed(1));
+  const rowsBeforeSplit = await ev("document.querySelectorAll('.sub-row').length");
+  await ev("document.querySelector('[data-sub-split=\"0\"]').click()");
+  await ev("document.querySelector('[data-sub-merge=\"0\"]').click()");
+  check("tách rồi gộp lại → số dòng và chữ như cũ", (await ev("document.querySelectorAll('.sub-row').length")) === rowsBeforeSplit && (await ev("document.querySelector('[data-sub-text=\"0\"]').value")) === "Dòng thử ấ");
+  await waitFor("(() => { const d = document.querySelector('.ed-canvas').getContext('2d').getImageData(100, 900, 800, 240).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 180 && d[i + 2] < 140) n++; return n > 300; })()", "phụ đề trên bản xem trước");
+  check("xem trước: phụ đề karaoke hiện phía trên sticker giá, từ đang nói tô vàng", true);
+
   await ev("document.querySelector('[data-action=\"export\"]').click()");
   await waitFor("!!document.querySelector('.ed-result:not([hidden]) video')", "xuất video");
   const exported = await ev(`(async () => {
@@ -313,11 +340,22 @@ try {
   })()`);
   check("file xuất: chữ hook có ở giây 1, không còn ở giây 5", layers.hookAt1 > 100 && layers.hookAt5 === 0, JSON.stringify(layers));
   check("file xuất: sticker giá và CTA chỉ hiện ở cuối video", layers.priceAt5 > 300 && layers.priceAt1 === 0 && layers.ctaAt5 > 300 && layers.ctaAt1 === 0, JSON.stringify(layers));
+  const subsPixels = await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    const blob = await (await fetch(document.querySelector(".ed-result video").src)).blob();
+    const v = await new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) }).getPrimaryVideoTrack();
+    const cs = new MB.CanvasSink(v, { width: 270, height: 480, fit: "fill" });
+    const count = async (t) => { const d = (await cs.getCanvas(t)).canvas.getContext("2d").getImageData(20, 215, 215, 70).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 190 && d[i + 1] > 170) n++; return n; };
+    return { at02: await count(0.2), at3: await count(3.0), at55: await count(5.5) };
+  })()`);
+  check("file xuất: phụ đề được in vào video suốt chiều dài", subsPixels.at02 > 40 && subsPixels.at3 > 40 && subsPixels.at55 > 40, JSON.stringify(subsPixels));
   check("file xuất: không chữ nào lấn vào cột nút bên phải hay vùng caption phía dưới của TikTok", layers.rightColumn === 0 && layers.belowSafe === 0, JSON.stringify(layers));
   check("file xuất không có lớp UI TikTok giả (vùng trên cùng vẫn là màu clip)", (await ev(`(async () => { const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs"); const blob = await (await fetch(document.querySelector(".ed-result video").src)).blob(); const v = await new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) }).getPrimaryVideoTrack(); const d = (await new MB.CanvasSink(v, { width: 270, height: 480, fit: "fill" }).getCanvas(1)).canvas.getContext("2d").getImageData(225, 5, 1, 1).data; return d[0]; })()`)) > 200);
   await ev("document.querySelector('[data-action=\"save-final\"]').click()");
   await waitFor("document.querySelector('[data-action=\"save-final\"]')?.textContent === 'Đã lưu lên kho ✓'", "lưu video lên kho");
   check("Lưu lên kho thành công", true);
+  const srt = await ev("fetch('/media/p/" + id + "/subs.srt').then((r) => r.text())");
+  check("file .srt được lưu kèm video, đúng định dạng và có chữ đã sửa", srt.startsWith("1\r\n00:00:00,000 --> ") && srt.includes("Dòng thử ấ") && /\r\n\r\n2\r\n/.test(srt), srt.slice(0, 60));
   await shot("4-editor.png");
   await send("Page.reload");
   await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && document.querySelectorAll('.seg').length === 3", "mở lại trình dựng");
@@ -336,12 +374,14 @@ try {
   await ev("document.querySelector('[data-action=\"save-cover\"]').click()");
   await waitFor("document.querySelector('#toast').textContent.startsWith('Đã lưu ảnh bìa') && document.querySelectorAll('.seg').length === 4", "lưu ảnh bìa lần hai");
   check("khối 'Chữ trên video' không in ra chữ rác", await ev("!/\\b(false|undefined|null)\\b/.test(document.querySelector('.ed-overlays').textContent)"));
+  check("chèn ảnh bìa sau khi có phụ đề → cảnh báo thời gian phụ đề có thể lệch", await ev("!!document.querySelector('.subs-stale')"));
   check("lưu ảnh bìa lần hai không tạo thêm đoạn bìa", await ev("[...document.querySelectorAll('.seg-name')].filter((n) => n.textContent.includes('Ảnh bìa')).length === 1"));
   await shot("5-cover.png");
 
   await ev("location.hash = '#/p/" + id + "'");
   await waitFor("!!document.querySelector('.final-video')", "video thành phẩm trên trang sản phẩm");
   await waitFor("document.querySelector('.final-cover')?.complete && document.querySelector('.final-cover').naturalWidth > 0", "ảnh bìa trên trang sản phẩm");
+  check("trang sản phẩm có link tải phụ đề .srt", await ev("!!document.querySelector('.final-subs a[download]')"));
   check("trang sản phẩm hiện ảnh bìa 1080x1920 từ kho", await ev("(() => { const i = document.querySelector('.final-cover'); return i.naturalWidth === 1080 && i.naturalHeight === 1920 && i.getAttribute('src') === '/media/p/" + id + "/cover.png'; })()"));
   await waitFor("document.querySelector('.final-video').readyState >= 1", "video thành phẩm tải được");
   check("trang sản phẩm hiện video thành phẩm 1080x1920 từ kho, kèm nút tải", await ev("(() => { const v = document.querySelector('.final-video'); return v.getAttribute('src') === '/media/p/" + id + "/final.mp4' && v.videoWidth === 1080 && v.videoHeight === 1920 && !!document.querySelector('.final a[download]'); })()"));

@@ -13,6 +13,7 @@ import { onRequestPost as generateHandler, onRequestGet as promptHandler } from 
 import { onRequestPut as packageHandler } from "../functions/api/products/[id]/package.js";
 import { onRequestPut as uploadHandler } from "../functions/api/products/[id]/upload/[name].js";
 import { onRequestGet as brandGet, onRequestPut as brandPut } from "../functions/api/brandkit.js";
+import { onRequestPost as transcribeHandler } from "../functions/api/transcribe.js";
 
 const cocoonText = readFileSync(new URL("./fixtures/cocoon.json", import.meta.url), "utf8");
 const cocoon = JSON.parse(cocoonText);
@@ -481,7 +482,7 @@ test("cờ hasPackage và hasFinal không ghi đè nhau", async () => {
 test("upload: tên lạ, không phải MP4, rỗng, quá lớn, id sai đều bị từ chối và không ghi gì", async () => {
   const { id } = await (await post(cocoonText)).json();
   const count = env.BUCKET._store.size;
-  for (const name of ["final.mov", "product.json", "../x", "cover.jpg", "FINAL.MP4", "subs.srt"]) assert.equal((await upload(id, name, mp4Bytes())).status, 400, name);
+  for (const name of ["final.mov", "product.json", "../x", "cover.jpg", "FINAL.MP4", "subs.vtt"]) assert.equal((await upload(id, name, mp4Bytes())).status, 400, name);
   assert.equal((await upload(id, "cover.png", mp4Bytes())).status, 400); // nội dung MP4 dưới tên PNG
   const notMp4 = await upload(id, "final.mp4", new TextEncoder().encode("<html><script>alert(1)</script></html>".padEnd(64, " ")));
   assert.equal(notMp4.status, 400);
@@ -504,15 +505,15 @@ const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
 const putBrand = (body) => brandPut(ctx("PUT", "/api/brandkit", { body: typeof body === "string" ? body : JSON.stringify(body), headers: { "Content-Type": "application/json" } }));
 
 test("brand kit: mặc định khi chưa lưu; lưu rồi đọc lại; nằm ở cfg/ (ngoài rule xoá 7 ngày)", async () => {
-  assert.deepEqual((await (await brandGet(ctx("GET", "/api/brandkit"))).json()).brandkit, { handle: "", position: "tl", watermark: true, logo: null });
-  const r = await putBrand({ handle: "  kenhcuatoi ", position: "br", watermark: true, logo: PNG });
+  assert.deepEqual((await (await brandGet(ctx("GET", "/api/brandkit"))).json()).brandkit, { handle: "", position: "tl", watermark: true, logo: null, subtitleStyle: "karaoke" });
+  const r = await putBrand({ handle: "  kenhcuatoi ", position: "br", watermark: true, logo: PNG, subtitleStyle: "box" });
   assert.equal(r.status, 200);
   const saved = (await r.json()).brandkit;
-  assert.deepEqual(saved, { handle: "@kenhcuatoi", position: "br", watermark: true, logo: PNG });
+  assert.deepEqual(saved, { handle: "@kenhcuatoi", position: "br", watermark: true, logo: PNG, subtitleStyle: "box" });
   assert.deepEqual((await (await brandGet(ctx("GET", "/api/brandkit"))).json()).brandkit, saved);
   assert.notEqual(await env.BUCKET.head("cfg/brandkit.json"), null);
   assert.equal((await putBrand({ handle: "", position: "tl", watermark: false, logo: null })).status, 200);
-  assert.deepEqual((await (await brandGet(ctx("GET", "/api/brandkit"))).json()).brandkit, { handle: "", position: "tl", watermark: false, logo: null });
+  assert.deepEqual((await (await brandGet(ctx("GET", "/api/brandkit"))).json()).brandkit, { handle: "", position: "tl", watermark: false, logo: null, subtitleStyle: "karaoke" });
 });
 
 test("brand kit: đầu vào sai bị từ chối, bản đã lưu giữ nguyên", async () => {
@@ -526,6 +527,7 @@ test("brand kit: đầu vào sai bị từ chối, bản đã lưu giữ nguyên
     { handle: "a", position: "tl", watermark: true, logo: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" },
     { handle: "a", position: "tl", watermark: true, logo: "data:image/png;base64,PHN2Zz48c2NyaXB0Pg==" },
     { handle: "a", position: "tl", watermark: true, logo: "https://evil.example/logo.png" },
+    { handle: "a", position: "tl", watermark: true, logo: null, subtitleStyle: "nhấp nháy" },
     { handle: "a", position: "tl", watermark: true, logo: "data:image/png;base64,iVBORw0KGgo" + "A".repeat(420000) },
   ];
   for (const body of bad) assert.equal((await putBrand(body)).status, 400, JSON.stringify(body).slice(0, 80));
@@ -557,4 +559,73 @@ test("upload cover.png: không phải PNG hoặc quá 8MB bị từ chối", asy
   assert.deepEqual(await bad.json(), { error: "File không phải PNG" });
   assert.equal((await upload(id, "cover.png", pngBytes(), { "Content-Length": String(9 * 1024 * 1024) })).status, 413);
   assert.equal(await env.BUCKET.head(`p/${id}/cover.png`), null);
+});
+
+// ---------- phase 7: phụ đề ----------
+
+const SRT = "1\r\n00:00:00,400 --> 00:00:01,200\r\nDa dầu thử\r\n";
+
+test("upload subs.srt → lưu được, chi tiết trả subs, /media trả về dạng file tải xuống", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  const r = await upload(id, "subs.srt", new TextEncoder().encode(SRT), { "Content-Type": "application/x-subrip" });
+  assert.equal(r.status, 200);
+  const detail = await (await getHandler(ctx("GET", "/", { params: { id } }))).json();
+  assert.equal(detail.subs.url, `/media/p/${id}/subs.srt`);
+  const got = await media(`p/${id}/subs.srt`);
+  assert.equal(got.headers.get("content-type"), "application/octet-stream");
+  assert.match(got.headers.get("content-disposition"), /^attachment/);
+  assert.equal(await got.text(), SRT);
+});
+
+test("upload subs.srt: nội dung không phải SRT bị từ chối", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  for (const body of ["<html><script>alert(1)</script></html>", "", "1\n00:00 --> 00:01\nx", "\u0000\u0001\u0002"]) {
+    const r = await upload(id, "subs.srt", new TextEncoder().encode(body));
+    assert.equal(r.status, 400, body);
+  }
+  assert.equal((await upload(id, "subs.srt", new TextEncoder().encode(SRT), { "Content-Length": String(2 * 1024 * 1024) })).status, 413);
+  assert.equal(await env.BUCKET.head(`p/${id}/subs.srt`), null);
+});
+
+const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+const wavBytes = (seconds = 1) => { const b = new Uint8Array(44 + Math.round(seconds * 32000)); b.set([0x52, 0x49, 0x46, 0x46], 0); b.set([0x57, 0x41, 0x56, 0x45], 8); return b; }; // "RIFF"…"WAVE"
+const transcribe = (body, query = "?lang=vi&prompt=Cocoon", headers = {}) => transcribeHandler(ctx("POST", `/api/transcribe${query}`, { body, headers: { "Content-Type": "audio/wav", ...headers } }));
+const groqOk = { json: { words: [{ word: "da", start: 0.4, end: 0.6 }, { word: "dầu", start: 0.6, end: 0.9 }], segments: [{ start: 0.4, end: 0.9, text: "da dầu" }] } };
+
+test("transcribe: có key Groq → trả words và segments; gợi ý tên riêng được chuyển tiếp", async () => {
+  env.GROQ_API_KEY = "gk";
+  globalThis.fetch = fakeFetch({ [GROQ_URL]: groqOk });
+  const r = await transcribe(wavBytes());
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { words: [{ w: "da", start: 0.4, end: 0.6 }, { w: "dầu", start: 0.6, end: 0.9 }], segments: [{ text: "da dầu", start: 0.4, end: 0.9 }], corrected: false });
+  assert.equal(globalThis.fetch.calls[0].body.get("prompt"), "Cocoon");
+  assert.equal(globalThis.fetch.calls[0].headers.get("authorization"), "Bearer gk");
+});
+
+test("transcribe: có cả LLM → sửa dấu câu, mốc thời gian giữ nguyên; LLM trả lệch số từ thì dùng bản gốc", async () => {
+  Object.assign(env, { GROQ_API_KEY: "gk", LLM_BASE_URL: "https://llm.example.test/v1", LLM_MODEL: "flash", LLM_API_KEY: "k" });
+  globalThis.fetch = fakeFetch({ [GROQ_URL]: groqOk, [LLM_URL]: { json: { choices: [{ message: { content: '{"words":["Da","dầu."]}' } }] } } });
+  const good = await (await transcribe(wavBytes())).json();
+  assert.deepEqual(good.words, [{ w: "Da", start: 0.4, end: 0.6 }, { w: "dầu.", start: 0.6, end: 0.9 }]);
+  assert.equal(good.corrected, true);
+  globalThis.fetch = fakeFetch({ [GROQ_URL]: groqOk, [LLM_URL]: { json: { choices: [{ message: { content: '{"words":["Da dầu."]}' } }] } } });
+  const bad = await (await transcribe(wavBytes())).json();
+  assert.deepEqual(bad.words.map((w) => w.w), ["da", "dầu"]);
+  assert.equal(bad.corrected, false);
+});
+
+test("transcribe: chưa có key → 503; Groq hết hạn mức → 429; không gọi mạng khi đầu vào sai", async () => {
+  globalThis.fetch = fakeFetch({ [GROQ_URL]: groqOk });
+  const noKey = await transcribe(wavBytes());
+  assert.equal(noKey.status, 503);
+  assert.match((await noKey.json()).error, /GROQ_API_KEY/);
+  env.GROQ_API_KEY = "gk";
+  assert.equal((await transcribe(new TextEncoder().encode("không phải wav".padEnd(64, " ")))).status, 400);
+  assert.equal((await transcribe(new Uint8Array(0))).status, 400);
+  assert.equal((await transcribe(wavBytes(), "", { "Content-Length": String(44 + 601 * 32000) })).status, 413);
+  assert.equal(globalThis.fetch.calls.length, 0);
+  globalThis.fetch = fakeFetch({ [GROQ_URL]: { json: {}, status: 429 } });
+  const limited = await transcribe(wavBytes());
+  assert.equal(limited.status, 429);
+  assert.match((await limited.json()).error, /hết hạn mức/);
 });

@@ -15,6 +15,7 @@ export async function onRequestGet({ env, params }) {
     package: await getPackage(env.BUCKET, id),
     final: await getUpload(env.BUCKET, id, "final.mp4"),
     cover: await getUpload(env.BUCKET, id, "cover.png"),
+    subs: await getUpload(env.BUCKET, id, "subs.srt"),
     expiresAt: expiresAt(product.createdAt, days),
   });
 }

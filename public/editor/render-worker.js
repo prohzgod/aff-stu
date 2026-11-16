@@ -2,6 +2,7 @@
 // Luồng: giải mã → composeFrame → mã hoá H.264 → đóng gói MP4. Tiếng được giải mã, ghép theo timeline rồi mã hoá lại AAC.
 //
 // Tin nhắn vào:  { type: "capabilities" } | { type: "probe", id, blob } | { type: "render", job } | { type: "cancel" }
+//                { type: "audio", id, job }  → trả tiếng của timeline dạng WAV 16kHz mono (để gửi đi phiên âm)
 // Tin nhắn ra:   { type: "capabilities", video, audio } | { type: "probe", id, info | error }
 //                { type: "progress", value } | { type: "done", buffer, info } | { type: "error", message, cancelled? }
 
@@ -11,6 +12,7 @@ import { placeSamples } from "./audio.js";
 import { composeFrame } from "./compose.js";
 import { activeOverlays } from "./overlays.js";
 import { loadFonts } from "./fonts.js";
+import { activeLine, toMono16k, encodeWav } from "./subtitles.js";
 
 const VIDEO_BITRATE = 8_000_000;
 const AUDIO_BITRATE = 160_000;
@@ -55,8 +57,46 @@ async function probe(blob) {
   }
 }
 
+// Ghép tiếng của mọi đoạn vào bộ đệm stereo của cả timeline; đoạn không có tiếng để nguyên số 0 (im lặng).
+async function mixAudio(segments, schedule, inputFor, stop = () => {}) {
+  const mix = [new Float32Array(schedule.totalSamples), new Float32Array(schedule.totalSamples)];
+  for (const item of schedule.items) {
+    const seg = segments[item.index];
+    if (seg.type !== "clip" || seg.muted) continue;
+    const track = await inputFor(seg.blob).getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) continue;
+    const sink = new MB.AudioSampleSink(track);
+    for await (const sample of sink.samples(seg.in, seg.out)) {
+      stop();
+      const plane = new Float32Array(sample.numberOfFrames);
+      for (let ch = 0; ch < 2; ch++) {
+        sample.copyTo(plane, { planeIndex: Math.min(ch, sample.numberOfChannels - 1), format: "f32-planar" });
+        placeSamples(mix[ch], item.startSample, item.sampleCount, plane, sample.sampleRate, sample.timestamp - seg.in, SAMPLE_RATE);
+      }
+      sample.close();
+    }
+  }
+  return mix;
+}
+
+// Tiếng của timeline dạng WAV 16kHz mono, nhỏ gọn để gửi đi phiên âm.
+async function timelineWav(job) {
+  const { segments } = job;
+  const schedule = buildSchedule(segments, outputFps(segments));
+  const inputs = new Map();
+  const inputFor = (blob) => { if (!inputs.has(blob)) inputs.set(blob, openInput(blob)); return inputs.get(blob); };
+  try {
+    const [left, right] = await mixAudio(segments, schedule, inputFor);
+    const wav = encodeWav(toMono16k(left, right, SAMPLE_RATE), 16000);
+    return { buffer: wav.buffer, duration: schedule.duration };
+  } finally {
+    for (const input of inputs.values()) input.dispose?.();
+  }
+}
+
 async function render(job) {
-  const { segments, watermark, overlays } = job;
+  const { segments, watermark, overlays, subtitles } = job;
+  const subsOn = Boolean(subtitles?.enabled && Array.isArray(subtitles.lines) && subtitles.lines.length);
   const problems = validateTimeline(segments);
   if (problems.length) throw new Error(problems[0]);
 
@@ -67,7 +107,11 @@ async function render(job) {
 
   await loadFonts(self.fonts); // trước frame đầu, để chữ tiếng Việt không ra font dự phòng
   // Đoạn ảnh bìa đã có chữ riêng: không phủ lớp chữ hay watermark lên nó.
-  const layers = (seg, frameIndex) => (seg.isCover ? { overlays: [], watermark: null } : { overlays: activeOverlays(overlays, frameIndex / fps, schedule.duration), watermark: mark });
+  const layers = (seg, frameIndex) => (seg.isCover ? { overlays: [], watermark: null, subtitle: null } : {
+    overlays: activeOverlays(overlays, frameIndex / fps, schedule.duration),
+    subtitle: subsOn ? { active: activeLine(subtitles.lines, frameIndex / fps), style: subtitles.style } : null,
+    watermark: mark,
+  });
   const mark = watermark ? { ...watermark, logo: watermark.logoBlob ? await createImageBitmap(watermark.logoBlob) : null } : null;
 
   const output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: "in-memory" }), target: new MB.BufferTarget() });
@@ -86,24 +130,8 @@ async function render(job) {
   const stop = () => { if (cancelled) throw Object.assign(new Error("Đã huỷ"), { cancelled: true }); };
 
   try {
-    // ----- tiếng: ghép vào bộ đệm của cả timeline; đoạn không có tiếng để nguyên số 0 (im lặng) -----
-    const mix = [new Float32Array(schedule.totalSamples), new Float32Array(schedule.totalSamples)];
-    for (const item of schedule.items) {
-      const seg = segments[item.index];
-      if (seg.type !== "clip" || seg.muted) continue;
-      const track = await inputFor(seg.blob).getPrimaryAudioTrack();
-      if (!track || !(await track.canDecode())) continue;
-      const sink = new MB.AudioSampleSink(track);
-      for await (const sample of sink.samples(seg.in, seg.out)) {
-        stop();
-        const plane = new Float32Array(sample.numberOfFrames);
-        for (let ch = 0; ch < 2; ch++) {
-          sample.copyTo(plane, { planeIndex: Math.min(ch, sample.numberOfChannels - 1), format: "f32-planar" });
-          placeSamples(mix[ch], item.startSample, item.sampleCount, plane, sample.sampleRate, sample.timestamp - seg.in, SAMPLE_RATE);
-        }
-        sample.close();
-      }
-    }
+    // ----- tiếng -----
+    const mix = await mixAudio(segments, schedule, inputFor, stop);
 
     // ----- hình -----
     let done = 0;
@@ -183,6 +211,13 @@ self.onmessage = async ({ data }) => {
         postMessage({ type: "probe", id: data.id, info: await probe(data.blob) });
       } catch (error) {
         postMessage({ type: "probe", id: data.id, error: error?.message || "Không đọc được file" });
+      }
+    } else if (data.type === "audio") {
+      try {
+        const { buffer, duration } = await timelineWav(data.job);
+        postMessage({ type: "audio", id: data.id, buffer, duration }, [buffer]);
+      } catch (error) {
+        postMessage({ type: "audio", id: data.id, error: error?.message || "Không tách được tiếng" });
       }
     } else if (data.type === "render") {
       cancelled = false;

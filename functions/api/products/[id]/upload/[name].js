@@ -1,5 +1,5 @@
 // PUT /api/products/:id/upload/:name: nhận file thành phẩm của Hậu kỳ (body nhị phân).
-// final.mp4 (phase 5), cover.png (phase 6). subs.srt thêm ở phase 7.
+// final.mp4 (phase 5), cover.png (phase 6), subs.srt (phase 7).
 import { json, isValidId, isExpired, retentionDays } from "../../../../../lib/util.js";
 import { getProduct, saveUpload } from "../../../../../lib/store.js";
 
@@ -14,6 +14,15 @@ const RULES = {
   "cover.png": {
     max: 8 * MB, tooBig: "Ảnh bìa quá lớn (tối đa 8MB)", wrong: "File không phải PNG",
     check: (b) => [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((v, i) => b[i] === v),
+  },
+  "subs.srt": {
+    max: MB, tooBig: "File phụ đề quá lớn (tối đa 1MB)", wrong: "File không phải SRT",
+    // Văn bản UTF-8 hợp lệ, bắt đầu bằng khối SRT đầu tiên: "1", dòng thời gian, rồi chữ.
+    check: (b) => {
+      let text;
+      try { text = new TextDecoder("utf-8", { fatal: true }).decode(b); } catch { return false; }
+      return /^\uFEFF?1\r?\n\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\r?\n/.test(text) && !text.includes("\u0000");
+    },
   },
 };
 

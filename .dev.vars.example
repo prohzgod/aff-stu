@@ -1,3 +1,5 @@
 APP_TOKEN=dev-token-doi-truoc-khi-deploy
 # Tuỳ chọn: key Google AI Studio. Không có thì app dùng gói dựng sẵn và chế độ thủ công.
 # LLM_API_KEY=
+# Tuỳ chọn: key console.groq.com cho phụ đề tự động. Không có thì dùng "lời thoại từ kịch bản" rồi sửa tay.
+# GROQ_API_KEY=

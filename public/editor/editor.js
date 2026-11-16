@@ -13,6 +13,7 @@ import {
 import { composeFrame } from "./compose.js";
 import { activeOverlays, defaultOverlays, drawTikTokUi } from "./overlays.js";
 import { loadFonts } from "./fonts.js";
+import { SUBTITLE_STYLES, wordsToLines, linesFromText, activeLine, toSrt, nudgeLine, splitLine, mergeLines, setLineText } from "./subtitles.js";
 import { putClip, getClip, deleteClip, pruneOldClips } from "./local-clips.js";
 
 const IMAGE_SECONDS = 2;
@@ -28,6 +29,7 @@ function createWorker() {
   let onProgress = null, settle = null;
   worker.addEventListener("message", ({ data }) => {
     if (data.type === "probe") waiting.get(data.id)?.(data);
+    else if (data.type === "audio") waiting.get(`audio${data.id}`)?.(data);
     else if (data.type === "capabilities") waiting.get("cap")?.(data);
     else if (data.type === "progress") onProgress?.(data.value);
     else if (data.type === "done") settle?.resolve(data);
@@ -40,6 +42,11 @@ function createWorker() {
       const id = ++probeSeq;
       waiting.set(id, (data) => { waiting.delete(id); data.error ? reject(new Error(data.error)) : resolve(data.info); });
       worker.postMessage({ type: "probe", id, blob });
+    }),
+    audio: (job) => new Promise((resolve, reject) => {
+      const id = ++probeSeq;
+      waiting.set(`audio${id}`, (data) => { waiting.delete(`audio${id}`); data.error ? reject(new Error(data.error)) : resolve(data); });
+      worker.postMessage({ type: "audio", id, job });
     }),
     render: (job, progress) => new Promise((resolve, reject) => {
       onProgress = progress;
@@ -63,6 +70,7 @@ export function renderEditor(container, product, pkg = null) {
   let useWatermark = true;
   let overlays = defaultOverlays(product, pkg);
   let showTikTok = false;
+  let subtitles = { enabled: true, style: "karaoke", lines: [], sig: "" };
   let canExport = false;
   let exporting = false;
   let result = null; // { blob, url, info }
@@ -87,6 +95,7 @@ export function renderEditor(container, product, pkg = null) {
   const resultBox = h("section", { class: "card ed-result", hidden: true });
   const overlayBox = h("section", { class: "card ed-overlays" });
   const coverBox = h("section", { class: "card ed-cover", hidden: true });
+  const subsBox = h("section", { class: "card ed-subs" });
   const coverButton = h("button", { class: "btn", type: "button", "data-action": "open-cover", onclick: openCover }, "🖼 Tạo ảnh bìa");
   const tiktokToggle = h("input", { id: "ed-tiktok", type: "checkbox" });
   tiktokToggle.addEventListener("change", () => { showTikTok = tiktokToggle.checked; if (!playing) drawCurrent(); });
@@ -113,6 +122,7 @@ export function renderEditor(container, product, pkg = null) {
       h("div", { class: "ed-left" },
         h("section", { class: "card ed-timeline" }, h("h2", {}, "Các đoạn"), listEl, summary, problems),
         overlayBox,
+        subsBox,
         coverBox,
       ),
       h("section", { class: "card ed-preview" },
@@ -129,7 +139,7 @@ export function renderEditor(container, product, pkg = null) {
 
   // ----- lưu trạng thái trên thiết bị -----
   const persist = () => {
-    try { localStorage.setItem(storeKey, JSON.stringify({ segments, useWatermark, overlays })); } catch { /* đầy bộ nhớ: bỏ qua */ }
+    try { localStorage.setItem(storeKey, JSON.stringify({ segments, useWatermark, overlays, subtitles })); } catch { /* đầy bộ nhớ: bỏ qua */ }
   };
 
   function setSegments(next, { keepResult = false } = {}) {
@@ -137,6 +147,7 @@ export function renderEditor(container, product, pkg = null) {
     if (!keepResult) clearResult();
     persist();
     drawList();
+    drawSubsBox();
     stop();
     showAt(Math.min(time, Math.max(0, totalDuration(segments) - 0.01)));
   }
@@ -322,6 +333,7 @@ export function renderEditor(container, product, pkg = null) {
     composeFrame(ctx, {
       source, fit: seg?.fit || "cover", zoom,
       overlays: cover || bare ? [] : activeOverlays(overlays, time, totalDuration(segments)),
+      subtitle: cover || bare || !subtitles.enabled || !subtitles.lines.length ? null : { active: activeLine(subtitles.lines, time), style: subtitles.style },
       watermark: cover || bare ? null : watermark(),
     });
     if (showTikTok && !bare) drawTikTokUi(ctx);
@@ -429,6 +441,107 @@ export function renderEditor(container, product, pkg = null) {
       row("cta", "Lời kêu gọi", "Hiện trong 2,5 giây cuối, sát mép dưới vùng an toàn."),
       ...(pkg ? [] : [h("p", { class: "hint" }, "Sản phẩm chưa có gói đăng bài nên chữ hook chưa có sẵn. Tạo gói ở trang sản phẩm rồi quay lại, hoặc tự gõ.")]),
     );
+  }
+
+  // ----- phụ đề -----
+  let subsStyleChosen = false; // người dùng (hoặc bản lưu) đã chọn kiểu: không lấy mặc định từ brand kit nữa
+  let subsBusy = false;
+  let subsMessage = "";
+  // "Chữ ký" của timeline lúc tạo phụ đề: đổi đoạn sau đó thì mốc thời gian có thể lệch.
+  const timelineSig = () => segments.map((s) => `${s.sourceId}:${s.type === "clip" ? `${s.in}-${s.out}:${s.muted ? 1 : 0}` : s.duration}`).join("|");
+
+  function setSubtitles(change, { keepMessage = false } = {}) {
+    subtitles = { ...subtitles, ...change };
+    if (!keepMessage) subsMessage = "";
+    clearResult();
+    persist();
+    drawSubsBox();
+    if (!playing) drawCurrent();
+  }
+
+  async function autoSubtitles() {
+    if (subsBusy || !segments.length) return;
+    subsBusy = true;
+    subsMessage = "Đang tách tiếng và phiên âm…";
+    drawSubsBox();
+    try {
+      const { buffer } = await worker.audio({ segments: segments.map((s) => ({ ...s, blob: sources.get(s.sourceId).blob })) });
+      const hint = [shortName(product.title), product.shopName].filter(Boolean).join(", ");
+      const query = new URLSearchParams({ lang: "vi", prompt: hint });
+      const { words } = await api(`/api/transcribe?${query}`, { method: "POST", body: new Blob([buffer], { type: "audio/wav" }) });
+      if (!words.length) throw new Error("Không nghe thấy lời nói nào trong video.");
+      subsMessage = "";
+      setSubtitles({ lines: wordsToLines(words, subtitles.style), sig: timelineSig(), enabled: true });
+      toast("Đã tạo phụ đề");
+    } catch (err) {
+      subsMessage = `${err.message} Bạn có thể dùng lời thoại từ kịch bản rồi sửa tay.`;
+      if (err.status === 401) toast(err.message);
+    } finally {
+      subsBusy = false;
+      drawSubsBox();
+    }
+  }
+
+  function scriptSubtitles() {
+    const spoken = (Array.isArray(pkg?.script) ? pkg.script : []).map((b) => b?.voiceover).filter(Boolean).join(" ") || pkg?.hooks?.[0]?.spoken || "";
+    if (!spoken.trim()) return toast("Sản phẩm chưa có kịch bản. Tạo gói đăng bài trước.");
+    const start = segments[0]?.isCover ? segmentDuration(segments[0]) : 0;
+    const lines = linesFromText(spoken, start, totalDuration(segments), subtitles.style);
+    if (!lines.length) return toast("Thêm clip trước khi tạo phụ đề.");
+    setSubtitles({ lines, sig: timelineSig(), enabled: true });
+  }
+
+  function drawSubsBox() {
+    const ready = segments.length > 0 && segments.every((s) => sources.has(s.sourceId));
+    const enabled = h("input", { id: "subs-on", type: "checkbox", checked: subtitles.enabled });
+    enabled.addEventListener("change", () => setSubtitles({ enabled: enabled.checked }, { keepMessage: true }));
+    const style = h("select", { id: "subs-style" }, Object.entries(SUBTITLE_STYLES).map(([value, s]) => h("option", { value, selected: subtitles.style === value }, s.label)));
+    style.addEventListener("change", () => {
+      subsStyleChosen = true;
+      // Chia lại dòng theo kiểu mới (karaoke dòng ngắn, hai kiểu kia dòng dài hơn); chữ đã sửa nằm trong từng từ nên không mất.
+      setSubtitles({ style: style.value, lines: wordsToLines(subtitles.lines.flatMap((l) => l.words), style.value) });
+    });
+    const change = (lines) => setSubtitles({ lines });
+    const rows = subtitles.lines.map((line, i) => {
+      const text = h("input", { type: "text", value: line.text, maxlength: "120", "data-sub-text": String(i), "aria-label": `Phụ đề dòng ${i + 1}` });
+      text.addEventListener("change", () => {
+        const next = setLineText(line, text.value);
+        change(next.text ? subtitles.lines.map((l, k) => (k === i ? next : l)) : subtitles.lines.filter((_, k) => k !== i));
+      });
+      const nudge = (field, delta, label) => h("button", { class: "btn small", type: "button", "aria-label": label, onclick: () => change(subtitles.lines.map((l, k) => (k === i ? nudgeLine(l, field, delta) : l))) }, delta < 0 ? "−" : "+");
+      return h("div", { class: "sub-row" },
+        text,
+        h("div", { class: "sub-times" },
+          nudge("start", -0.1, "Bắt đầu sớm hơn 0,1 giây"), h("span", { class: "sub-time", "data-sub-start": String(i) }, line.start.toFixed(1)), nudge("start", 0.1, "Bắt đầu muộn hơn 0,1 giây"),
+          h("span", { class: "muted" }, "→"),
+          nudge("end", -0.1, "Kết thúc sớm hơn 0,1 giây"), h("span", { class: "sub-time", "data-sub-end": String(i) }, line.end.toFixed(1)), nudge("end", 0.1, "Kết thúc muộn hơn 0,1 giây"),
+          h("button", { class: "btn small", type: "button", disabled: line.words.length < 2, "data-sub-split": String(i), onclick: () => change(splitLine(subtitles.lines, i, Math.ceil(line.words.length / 2))) }, "Tách"),
+          h("button", { class: "btn small", type: "button", disabled: i === subtitles.lines.length - 1, "data-sub-merge": String(i), onclick: () => change(mergeLines(subtitles.lines, i)) }, "Gộp ↓"),
+          h("button", { class: "btn small danger", type: "button", "aria-label": "Xoá dòng", onclick: () => change(subtitles.lines.filter((_, k) => k !== i)) }, "✕"),
+        ),
+      );
+    });
+    const stale = subtitles.lines.length > 0 && subtitles.sig && subtitles.sig !== timelineSig();
+    subsBox.replaceChildren(...[
+      h("h2", {}, "Phụ đề"),
+      h("div", { class: "row wrap" },
+        h("button", { class: "btn primary", type: "button", "data-action": "subs-auto", disabled: subsBusy || !ready, onclick: autoSubtitles }, subsBusy ? "Đang tạo…" : "Tạo phụ đề tự động"),
+        h("button", { class: "btn", type: "button", "data-action": "subs-script", disabled: subsBusy || !ready, onclick: scriptSubtitles }, "Dùng lời thoại từ kịch bản"),
+      ),
+      subsMessage && h("p", { class: subsBusy ? "muted subs-message" : "field-error subs-message" }, subsMessage),
+      stale && h("p", { class: "field-error subs-stale" }, "Các đoạn đã thay đổi sau khi tạo phụ đề nên thời gian có thể lệch. Tạo lại phụ đề, hoặc chỉnh tay từng dòng."),
+      h("div", { class: "gen-grid" },
+        h("div", { class: "field" }, h("label", { for: "subs-style" }, "Kiểu"), style),
+        h("label", { class: "check" }, enabled, "In phụ đề vào video"),
+      ),
+      subtitles.lines.length > 0 && h("div", { class: "sub-list" }, rows),
+      subtitles.lines.length > 0 && h("div", { class: "row wrap" },
+        h("span", { class: "muted subs-count" }, `${subtitles.lines.length} dòng`),
+        h("button", { class: "btn small", type: "button", "data-action": "subs-download", onclick: () => downloadBlob(new Blob([toSrt(subtitles.lines)], { type: "application/x-subrip" }), `${slug(shortName(product.title))}.srt`) }, "⬇ Tải .srt"),
+        h("button", { class: "btn small danger", type: "button", onclick: () => setSubtitles({ lines: [], sig: "" }) }, "Xoá hết"),
+      ),
+      h("p", { class: "hint" }, "Phụ đề nằm phía trên sticker giá. Khi bấm \"Lưu lên kho\", file .srt được lưu kèm video."),
+    ].filter(Boolean));
   }
 
   // ----- ảnh bìa -----
@@ -540,6 +653,7 @@ export function renderEditor(container, product, pkg = null) {
         segments: segments.map((s) => ({ ...s, blob: sources.get(s.sourceId).blob })),
         watermark: watermark() ? { handle: brand.handle, position: brand.position, logoBlob } : null,
         overlays,
+        subtitles: { enabled: subtitles.enabled, style: subtitles.style, lines: subtitles.lines },
       };
       const { buffer, info } = await worker.render(job, (value) => {
         progress.value = value;
@@ -568,6 +682,8 @@ export function renderEditor(container, product, pkg = null) {
       saveButton.textContent = "Đang lưu…";
       try {
         await api(`/api/products/${product.id}/upload/final.mp4`, { method: "PUT", body: result.blob });
+        const srt = toSrt(subtitles.lines);
+        if (srt) await api(`/api/products/${product.id}/upload/subs.srt`, { method: "PUT", body: new Blob([srt], { type: "application/x-subrip" }) });
         saveButton.textContent = "Đã lưu lên kho ✓";
         saveNote.textContent = "Đã lưu. Mở trang sản phẩm trên điện thoại để xem và đăng.";
         toast("Đã lưu video lên kho");
@@ -607,6 +723,16 @@ export function renderEditor(container, product, pkg = null) {
       if (o && typeof o.enabled === "boolean" && typeof o.text === "string") overlays[kind] = { enabled: o.enabled, text: o.text.slice(0, 120) };
     }
     drawOverlayBox();
+    const savedSubs = saved?.subtitles;
+    if (savedSubs && Array.isArray(savedSubs.lines)) {
+      subtitles = {
+        enabled: savedSubs.enabled !== false,
+        style: Object.hasOwn(SUBTITLE_STYLES, savedSubs.style) ? savedSubs.style : "karaoke",
+        sig: typeof savedSubs.sig === "string" ? savedSubs.sig : "",
+        lines: savedSubs.lines.filter((l) => l && typeof l.text === "string" && Number.isFinite(l.start) && Number.isFinite(l.end) && Array.isArray(l.words)).slice(0, 400),
+      };
+      subsStyleChosen = true;
+    }
     if (saved && typeof saved.useWatermark === "boolean") {
       useWatermark = saved.useWatermark;
       markToggle.checked = useWatermark;
@@ -635,6 +761,7 @@ export function renderEditor(container, product, pkg = null) {
       }
     } catch { /* không có brand kit thì dựng không watermark */ }
     markRow.hidden = !(brand.watermark && (brand.handle || brand.logo));
+    if (!subsStyleChosen && Object.hasOwn(SUBTITLE_STYLES, brand.subtitleStyle)) { subtitles = { ...subtitles, style: brand.subtitleStyle }; drawSubsBox(); }
     if (!playing) drawCurrent();
   }
 
@@ -650,7 +777,9 @@ export function renderEditor(container, product, pkg = null) {
       notice.hidden = false;
     }
     drawOverlayBox();
+    drawSubsBox();
     await Promise.all([restore(), loadBrand(), loadFonts(document.fonts)]);
+    drawSubsBox();
     if (!playing) drawCurrent();
     drawList();
     container.dataset.ready = "1";

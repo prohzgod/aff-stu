@@ -2,6 +2,15 @@
 
 Mới nhất ở trên. Mỗi mục: quyết định, lý do. Thứ đã có trong `docs/spec/` thì không chép lại ở đây.
 
+## 2026-11-16 · Phase 7: các quyết định khi dựng
+- **Groq:** endpoint `POST https://api.groq.com/openai/v1/audio/transcriptions`, multipart, `response_format=verbose_json`, `timestamp_granularities[]=word` và `segment`. Model mặc định `whisper-large-v3` (tài liệu Groq khuyên cho đa ngôn ngữ cần chính xác); đổi bằng `GROQ_MODEL`. Giới hạn free: file 25MB; 10 phút WAV 16kHz mono là 19MB nên nằm gọn. Tài liệu không cho ví dụ về mảng `words`, nên code nhận cả `word` lẫn `text`, và nếu không có mốc từng từ thì chia đều từ trong mỗi đoạn.
+- **LLM chỉ được sửa chữ, không được đổi số từ.** `applyCorrections` bỏ kết quả nếu số từ lệch. Dùng chung `callLlm` của phần sinh gói.
+- **Vị trí phụ đề:** mép dưới ở y = 1140, tối đa 2 dòng, phía trên sticker giá và CTA (spec ghi y 1100–1350, đã sửa spec). Lý do: ba lớp cùng hiện ở 3 giây cuối.
+- **Phụ đề không hiện trên đoạn ảnh bìa.**
+- **Đổi kiểu thì chia lại dòng** từ danh sách từ (karaoke 3 từ mỗi dòng, hai kiểu kia tối đa 7 từ hoặc 34 ký tự); chữ đã sửa nằm trong từng từ nên không mất.
+- **`subs.srt`** tối đa 1MB, server kiểm là văn bản UTF-8 bắt đầu bằng một khối SRT; `/media` trả nó dưới dạng file tải về.
+- **Brand kit** có thêm `subtitleStyle` (mặc định `karaoke`).
+
 ## 2026-11-16 · Phase 6: các quyết định khi dựng
 - **Lớp chữ có vị trí và thời điểm cố định:** hook ở trên (3 giây đầu), sticker giá phía trên CTA (3 giây cuối), CTA sát mép dưới vùng an toàn (2,5 giây cuối). Chữ dài thì tự thu cỡ rồi xuống dòng, quá dài thì cắt kèm dấu ba chấm. Phụ đề (phase 7) sẽ nằm phía trên sticker giá.
 - **Đoạn ảnh bìa không bị phủ chữ hay watermark** (nó đã có chữ riêng). Mỗi video chỉ có một đoạn ảnh bìa.

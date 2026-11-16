@@ -246,6 +246,12 @@ button.chip { min-height: 44px; padding: 0 14px; font-size: 0.95rem; color: var(
 .final-video, .final-cover { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; background: #000; }
 .ed-left { display: grid; gap: var(--gap); min-width: 0; }
 .ov-row input[type="text"] { min-height: 40px; }
+.sub-list { display: grid; gap: 8px; max-height: 420px; overflow: auto; padding-right: 4px; }
+.sub-row { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.sub-row input[type="text"] { min-height: 40px; }
+.sub-times { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.sub-times .btn { min-height: 34px; min-width: 34px; padding: 0 8px; }
+.sub-time { min-width: 2.6em; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
 .cover-grid { display: grid; gap: var(--gap); }
 @media (min-width: 700px) { .cover-grid { grid-template-columns: 270px minmax(0, 1fr); align-items: start; } }
 .cover-stage { width: 270px; height: 480px; border-radius: 10px; overflow: hidden; background: #000; justify-self: center; touch-action: none; }
