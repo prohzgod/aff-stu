@@ -8,6 +8,7 @@ Chạy trên Cloudflare Pages + Functions + R2. Vanilla JS, không build step. M
 
 - `npm test` — chạy toàn bộ test (`node --test`)
 - `npm run dev` — `wrangler pages dev` ở http://localhost:8788 (cần `.dev.vars`, chép từ `.dev.vars.example`)
+- `node scripts/ui-check.mjs` — kiểm UI bằng Chrome headless ở 375px (cần `npm run dev` đang chạy, kho local rỗng)
 
 ## Thông tin nào ở đâu
 
