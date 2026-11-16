@@ -1,6 +1,6 @@
 // GET /api/products/:id: chi tiết. DELETE: xoá sản phẩm và mọi file của nó.
 import { json, isValidId, isExpired, expiresAt, retentionDays } from "../../../lib/util.js";
-import { getProduct, getPackage, getFinal, deleteProduct } from "../../../lib/store.js";
+import { getProduct, getPackage, getUpload, deleteProduct } from "../../../lib/store.js";
 
 const notFound = () => json({ error: "Không tìm thấy sản phẩm" }, 404);
 
@@ -13,7 +13,8 @@ export async function onRequestGet({ env, params }) {
   return json({
     product,
     package: await getPackage(env.BUCKET, id),
-    final: await getFinal(env.BUCKET, id),
+    final: await getUpload(env.BUCKET, id, "final.mp4"),
+    cover: await getUpload(env.BUCKET, id, "cover.png"),
     expiresAt: expiresAt(product.createdAt, days),
   });
 }

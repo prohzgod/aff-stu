@@ -1,8 +1,16 @@
 # Trạng thái
 
-**Phase hiện tại:** 5 · Hậu kỳ lõi (ghép, xuất, lưu lên kho) — code xong, chờ chủ dự án kiểm trên thiết bị thật. Studio (phase 1–4) cũng đang chờ kiểm
+**Phase hiện tại:** 6 · Chữ trên video & ảnh bìa — code xong. Mọi phase từ 1 đến 6 đang chờ chủ dự án deploy và kiểm trên thiết bị thật (chủ dự án đã bảo làm hết các phase rồi mới test)
 **Thiết kế:** docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
-**Việc kế tiếp:** (1) chủ dự án kiểm phase 5 theo mục "Nghiệm thu gần nhất"; (2) `/spec next` để lập kế hoạch phase 6 (chữ hook, sticker giá, CTA, vùng an toàn, ảnh bìa)
+**Việc kế tiếp:** Phase 7 (phụ đề tự động)
+
+## Checklist phase 6
+- [x] `overlays.js`: chữ hook (3 giây đầu), sticker giá (3 giây cuối), CTA (2,5 giây cuối), tự thu chữ và xuống dòng, luôn trong vùng an toàn
+- [x] Font Be Vietnam Pro tự host, nạp xong trước frame đầu ở cả trang và worker
+- [x] Điều khiển "Chữ trên video" trong trình dựng, điền sẵn từ gói đăng bài; nút "Xem lớp UI TikTok" (chỉ trên bản xem trước)
+- [x] Trình làm ảnh bìa (Konva): nền là frame video hoặc ảnh sản phẩm, chữ từ `coverTexts`, sticker giá, logo, 3 bố cục, kéo-thả
+- [x] `cover.png` lưu lên kho, hiện trên trang sản phẩm; tuỳ chọn chèn làm 0,2 giây đầu video
+- [x] Nghiệm thu phần kiểm được trên máy dev
 
 ## Checklist phase 5
 - [x] Sửa luật 2; `example-input/` vào `.gitignore`; chép ba chỗ lệch spec vào `docs/spec/`
@@ -53,6 +61,16 @@
 (chưa có)
 
 ## Nghiệm thu gần nhất
+
+**2026-11-16 · Phase 6 · trên máy dev**
+
+Đã chạy và đạt: `npm test` 187/187; `node scripts/ui-check.mjs` 99/99. Phần mới được kiểm trong Chrome thật bằng cách **đọc lại điểm ảnh của file xuất**: chữ hook có ở giây 1 và hết ở giây 5; sticker giá và CTA chỉ có ở cuối video; không chữ nào lấn vào cột nút bên phải hay vùng caption phía dưới; lớp UI TikTok giả không lọt vào file xuất. Ảnh bìa: lưu lên kho, trang sản phẩm hiện đúng 1080x1920, chèn vào đầu video dài 0,2 giây, lưu lần hai không nhân đôi.
+
+Tiêu chí ✅ của phase 6:
+- "Chữ tiếng Việt có dấu hiển thị đúng ngay từ frame đầu": font được nạp trước khi vẽ ở cả trang và worker (kiểm bằng `document.fonts.check` và chữ có trong frame giây 1 của file xuất). **Nhìn bằng mắt xem dấu có đúng không: chờ chủ dự án kiểm.**
+- "Không chữ nào bị nút TikTok che": **đạt** theo số đo vùng an toàn của spec (kiểm bằng điểm ảnh). Trên app TikTok thật: chờ chủ dự án kiểm.
+
+**Chờ chủ dự án kiểm (phase 6):** dựng một video có đủ chữ hook, giá, CTA; xem trên điện thoại rồi đăng thử ở chế độ riêng tư, xem chữ có bị giao diện TikTok che không. Làm một ảnh bìa, kéo chữ sang chỗ khác, lưu, và chọn frame đầu làm bìa khi đăng.
 
 **2026-11-16 · Phase 5 · trên máy dev**
 
@@ -152,6 +170,13 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 3. Mở app trên iPhone, nhập token, mở sản phẩm: ảnh hiện, video phát và tua được, tải thử một ảnh.
 4. Xem dòng ghi chú trong khối "Ảnh & video". Nếu có "N file chưa lưu được về kho" tức CDN thật từ chối server: báo lại để ghi vào `docs/memory/gotchas.md` và xử lý.
 
+## Tồn đọng nhỏ từ phase 6 (chưa sửa)
+- Chọn frame làm nền ảnh bìa bằng thanh trượt và nút tiến/lùi từng frame; chưa có lưới thumbnail mỗi 0,5 giây như spec mục 9.6.
+- Chưa đổi được màu chữ ảnh bìa (mới đổi được nội dung, cỡ, vị trí, bố cục).
+- Thời điểm hiện của chữ hook/giá/CTA là cố định (3s đầu, 3s cuối, 2,5s cuối), chưa chỉnh được từng lớp.
+- Vị trí các lớp chữ trên video là cố định; chỉ ảnh bìa mới kéo-thả được.
+- Ảnh bìa không lưu lại bố cục để sửa tiếp: mở lại là làm mới.
+
 ## Tồn đọng nhỏ từ phase 5 (chưa sửa)
 - Chưa có bước làm nét sau khi phóng 720p lên 1080p (spec mục 9.7 chế độ "Chuẩn"); hiện chỉ dùng nội suy chất lượng cao của canvas. Để dành cho phase 8.5 cùng Enhance AI.
 - Xem trước dùng thẻ `<video>` nên có thể khựng nhẹ ở chỗ chuyển đoạn; bản xuất không bị.
@@ -179,7 +204,6 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 - `scripts/ui-check.mjs` viết cứng đường dẫn Chrome trên macOS.
 
 ## Các phase sau
-- [ ] Phase 6: Overlay & ảnh bìa
 - [ ] Phase 7: Phụ đề tự động
 - [ ] Phase 8: Đồng bộ `edit.json` & dựng hàng loạt (cần làm rõ lại phần batch với chủ dự án)
 - [ ] Phase 8.5: Enhance AI

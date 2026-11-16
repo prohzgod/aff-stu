@@ -6,6 +6,8 @@
 // fit: "cover" (lấp đầy khung) hoặc "blur" (nằm gọn, nền là chính hình đó làm mờ).
 
 export const OUTPUT = { width: 1080, height: 1920 };
+// Vùng an toàn TikTok trên khung 1080x1920 (docs/spec/hau-ky.md mục 9.4): chừa chỗ cho giao diện của TikTok.
+export const SAFE = { top: 130, bottom: 480, left: 44, right: 140 };
 export const SAMPLE_RATE = 48000;
 export const LIMITS = { maxSegments: 12, maxSeconds: 60, maxFileBytes: 200 * 1024 * 1024 };
 export const MIN_SEGMENT = 0.2;

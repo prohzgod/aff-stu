@@ -1,10 +1,10 @@
 // Vẽ MỘT frame 1080x1920. Dùng chung cho xem trước (luồng chính) và xuất (worker),
 // để bản xem trước luôn giống bản xuất. Không import gì ngoài logic thuần.
 
-import { OUTPUT, fitRect } from "./timeline.js";
+import { OUTPUT, SAFE, fitRect } from "./timeline.js";
+import { drawOverlays } from "./overlays.js";
 
-// Vùng an toàn TikTok trên khung 1080x1920 (docs/spec/hau-ky.md mục 9.4): chừa chỗ cho giao diện của TikTok.
-export const SAFE = { top: 130, bottom: 480, left: 44, right: 140 };
+export { SAFE };
 
 const WATERMARK_ALPHA = 0.7;
 const LOGO_MAX_HEIGHT = 96;
@@ -50,6 +50,7 @@ function drawWatermark(ctx, watermark) {
 //   source: { width, height, draw(ctx, x, y, w, h) } | null   hình nguồn của thời điểm này
 //   fit: "cover" | "blur"
 //   zoom: số ≥ 1 (Ken Burns cho ảnh tĩnh)
+//   overlays: [{ kind: "hook" | "price" | "cta", text }]   các lớp chữ đang hiện ở thời điểm này
 //   watermark: { handle, logo, position } | null
 // }
 export function composeFrame(ctx, frame) {
@@ -80,5 +81,6 @@ export function composeFrame(ctx, frame) {
       src.draw(ctx, r.x - (w - r.w) / 2, r.y - (h - r.h) / 2, w, h);
     }
   }
+  drawOverlays(ctx, frame.overlays); // chữ luôn vẽ thẳng ở 1080x1920, sau hình, nên luôn nét
   drawWatermark(ctx, frame.watermark);
 }

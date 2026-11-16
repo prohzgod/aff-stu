@@ -410,7 +410,7 @@ async function viewEditor(id, seq) {
   if (seq !== renderSeq) return;
   const box = h("div", { class: "editor" });
   show(box);
-  leaveView = editor.renderEditor(box, data.product);
+  leaveView = editor.renderEditor(box, data.product, data.package);
 }
 
 async function viewDetail(id, seq) {
@@ -434,16 +434,25 @@ async function viewDetail(id, seq) {
   if (seq !== renderSeq) return;
   const finalItem = data.final && { stored: data.final.url.replace(/^\/media\//, "") };
   const finalName = `${slug(shortName(data.product.title))}.mp4`;
+  const coverItem = data.cover && { stored: data.cover.url.replace(/^\/media\//, "") };
+  const coverName = `${slug(shortName(data.product.title))}_bia.png`;
+  const hasOutput = Boolean(data.final || data.cover);
   const finalSection = h("section", { class: "card final" },
     h("div", { class: "row" },
-      h("h2", {}, data.final ? "Video thành phẩm" : "Hậu kỳ"),
-      h("a", { class: "btn small push", href: `#/p/${data.product.id}/edit`, "data-action": "open-editor" }, data.final ? "🎬 Dựng lại" : "🎬 Dựng video"),
+      h("h2", {}, hasOutput ? "Video thành phẩm" : "Hậu kỳ"),
+      h("a", { class: "btn small push", href: `#/p/${data.product.id}/edit`, "data-action": "open-editor" }, hasOutput ? "🎬 Dựng lại" : "🎬 Dựng video"),
     ),
-    data.final
-      ? [
-          h("video", { class: "final-video", src: data.final.url, controls: true, playsinline: true, preload: "metadata" }),
-          h("div", { class: "row wrap" }, shareButton(finalItem, finalName, "video thành phẩm"), downloadLink(finalItem, finalName, "video thành phẩm")),
-        ]
+    hasOutput
+      ? h("div", { class: "final-grid" },
+          data.final && h("figure", { class: "final-item" },
+            h("video", { class: "final-video", src: data.final.url, controls: true, playsinline: true, preload: "metadata" }),
+            h("figcaption", { class: "row wrap" }, h("span", {}, "Video"), h("span", { class: "actions" }, shareButton(finalItem, finalName, "video thành phẩm"), downloadLink(finalItem, finalName, "video thành phẩm"))),
+          ),
+          data.cover && h("figure", { class: "final-item" },
+            h("img", { class: "final-cover", src: data.cover.url, alt: "Ảnh bìa", loading: "lazy" }),
+            h("figcaption", { class: "row wrap" }, h("span", {}, "Ảnh bìa"), h("span", { class: "actions" }, shareButton(coverItem, coverName, "ảnh bìa"), downloadLink(coverItem, coverName, "ảnh bìa"))),
+          ),
+        )
       : h("p", { class: "muted" }, "Ghép các clip từ Google Flow thành một video 1080x1920 để đăng. Nên dựng trên máy tính."),
   );
   const pkgState = { pkg: data.package };
@@ -451,10 +460,10 @@ async function viewDetail(id, seq) {
   show(
     h("a", { class: "back", href: "#/" }, "‹ Danh sách"),
     infoSection(data.product, data.expiresAt),
-    data.final && finalSection,
+    hasOutput && finalSection,
     mediaSection(data.product, pkgState),
     packageBox,
-    !data.final && finalSection,
+    !hasOutput && finalSection,
   );
   renderPackage(packageBox, data.product, pkgState);
 }

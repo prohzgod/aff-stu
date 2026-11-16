@@ -9,6 +9,8 @@ import * as MB from "./vendor/mediabunny-1.66.0.min.mjs";
 import { OUTPUT, SAMPLE_RATE, buildSchedule, frameSourceTime, kenBurnsScale, outputFps, validateTimeline } from "./timeline.js";
 import { placeSamples } from "./audio.js";
 import { composeFrame } from "./compose.js";
+import { activeOverlays } from "./overlays.js";
+import { loadFonts } from "./fonts.js";
 
 const VIDEO_BITRATE = 8_000_000;
 const AUDIO_BITRATE = 160_000;
@@ -54,7 +56,7 @@ async function probe(blob) {
 }
 
 async function render(job) {
-  const { segments, watermark } = job;
+  const { segments, watermark, overlays } = job;
   const problems = validateTimeline(segments);
   if (problems.length) throw new Error(problems[0]);
 
@@ -63,6 +65,9 @@ async function render(job) {
   const canvas = new OffscreenCanvas(OUTPUT.width, OUTPUT.height);
   const ctx = canvas.getContext("2d", { alpha: false });
 
+  await loadFonts(self.fonts); // trước frame đầu, để chữ tiếng Việt không ra font dự phòng
+  // Đoạn ảnh bìa đã có chữ riêng: không phủ lớp chữ hay watermark lên nó.
+  const layers = (seg, frameIndex) => (seg.isCover ? { overlays: [], watermark: null } : { overlays: activeOverlays(overlays, frameIndex / fps, schedule.duration), watermark: mark });
   const mark = watermark ? { ...watermark, logo: watermark.logoBlob ? await createImageBitmap(watermark.logoBlob) : null } : null;
 
   const output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: "in-memory" }), target: new MB.BufferTarget() });
@@ -122,7 +127,7 @@ async function render(job) {
           composeFrame(ctx, {
             source: current && { width: current.displayWidth, height: current.displayHeight, draw: (c, x, y, w, h) => current.draw(c, x, y, w, h) },
             fit: seg.fit,
-            watermark: mark,
+            ...layers(seg, item.startFrame + k),
           });
           if (sample && sample !== last) { last?.close(); last = sample; }
           await emit(item.startFrame + k);
@@ -135,7 +140,7 @@ async function render(job) {
         for (let k = 0; k < item.frameCount; k++) {
           stop();
           const progress = item.frameCount > 1 ? k / (item.frameCount - 1) : 0;
-          composeFrame(ctx, { source, fit: seg.fit, zoom: seg.kenBurns ? kenBurnsScale(progress) : 1, watermark: mark });
+          composeFrame(ctx, { source, fit: seg.fit, zoom: seg.kenBurns ? kenBurnsScale(progress) : 1, ...layers(seg, item.startFrame + k) });
           await emit(item.startFrame + k);
         }
         bitmap.close();

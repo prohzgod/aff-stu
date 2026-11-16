@@ -481,7 +481,8 @@ test("cờ hasPackage và hasFinal không ghi đè nhau", async () => {
 test("upload: tên lạ, không phải MP4, rỗng, quá lớn, id sai đều bị từ chối và không ghi gì", async () => {
   const { id } = await (await post(cocoonText)).json();
   const count = env.BUCKET._store.size;
-  for (const name of ["final.mov", "product.json", "../x", "cover.png", "FINAL.MP4"]) assert.equal((await upload(id, name, mp4Bytes())).status, 400, name);
+  for (const name of ["final.mov", "product.json", "../x", "cover.jpg", "FINAL.MP4", "subs.srt"]) assert.equal((await upload(id, name, mp4Bytes())).status, 400, name);
+  assert.equal((await upload(id, "cover.png", mp4Bytes())).status, 400); // nội dung MP4 dưới tên PNG
   const notMp4 = await upload(id, "final.mp4", new TextEncoder().encode("<html><script>alert(1)</script></html>".padEnd(64, " ")));
   assert.equal(notMp4.status, 400);
   assert.deepEqual(await notMp4.json(), { error: "File không phải MP4" });
@@ -529,4 +530,31 @@ test("brand kit: đầu vào sai bị từ chối, bản đã lưu giữ nguyên
   ];
   for (const body of bad) assert.equal((await putBrand(body)).status, 400, JSON.stringify(body).slice(0, 80));
   assert.equal((await (await brandGet(ctx("GET", "/api/brandkit"))).json()).brandkit.handle, "@a");
+});
+
+// ---------- phase 6: ảnh bìa ----------
+
+const pngBytes = (size = 64) => { const b = new Uint8Array(size); b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); return b; };
+
+test("upload cover.png → lưu đúng loại, chi tiết trả cover, /media hiển thị được như ảnh", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  assert.equal((await (await getHandler(ctx("GET", "/", { params: { id } }))).json()).cover, null);
+  const r = await upload(id, "cover.png", pngBytes(300), { "Content-Type": "image/png" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true, url: `/media/p/${id}/cover.png`, size: 300 });
+  const detail = await (await getHandler(ctx("GET", "/", { params: { id } }))).json();
+  assert.equal(detail.cover.url, `/media/p/${id}/cover.png`);
+  assert.equal(detail.final, null);
+  const shown = await media(`p/${id}/cover.png`);
+  assert.equal(shown.headers.get("content-type"), "image/png");
+  assert.equal((await (await listHandler(ctx("GET", "/api/products"))).json()).items[0].hasFinal, false);
+});
+
+test("upload cover.png: không phải PNG hoặc quá 8MB bị từ chối", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  const bad = await upload(id, "cover.png", new TextEncoder().encode("<svg><script>alert(1)</script></svg>".padEnd(64, " ")));
+  assert.equal(bad.status, 400);
+  assert.deepEqual(await bad.json(), { error: "File không phải PNG" });
+  assert.equal((await upload(id, "cover.png", pngBytes(), { "Content-Length": String(9 * 1024 * 1024) })).status, 413);
+  assert.equal(await env.BUCKET.head(`p/${id}/cover.png`), null);
 });

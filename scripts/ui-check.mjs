@@ -1,4 +1,4 @@
-// Kiểm UI (phase 1–5) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
+// Kiểm UI (phase 1–6) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
 // Chạy: node scripts/ui-check.mjs [thư mục lưu ảnh chụp]
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from "node:fs";
@@ -264,6 +264,19 @@ try {
   await waitFor("(() => { const c = document.querySelector('.ed-canvas'); const d = c.getContext('2d').getImageData(540, 1200, 1, 1).data; return d[0] > 180 && d[2] < 80; })()", "xem trước hiện frame đầu (đỏ)");
   check("xem trước hiện frame đầu của clip thứ nhất", true);
   check("xem trước có watermark @kenhthu ở góc trên-trái", await ev("(() => { const d = document.querySelector('.ed-canvas').getContext('2d').getImageData(44, 130, 260, 60).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 120) n++; return n > 200; })()"));
+  // ----- phase 6: chữ trên video -----
+  const whiteIn = (x, y, w, hh) => ev(`(() => { const d = document.querySelector('.ed-canvas').getContext('2d').getImageData(${x}, ${y}, ${w}, ${hh}).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200) n++; return n; })()`);
+  check("font Be Vietnam Pro đã nạp trước khi vẽ", await ev("document.fonts.check('800 60px \"Be Vietnam Pro\"') && document.fonts.check('600 40px \"Be Vietnam Pro\"', 'ấệ')"));
+  check("chữ hook, giá, CTA điền sẵn từ gói đăng bài", await ev("(() => { const v = (k) => document.querySelector('[data-overlay-text=\"' + k + '\"]').value; return v('hook').length > 0 && v('price') === 'Chỉ 217K · -43%' && v('cta') === 'Bấm giỏ hàng 🛒' && document.querySelectorAll('.ov-hook').length === 6; })()"));
+  await waitFor("(() => { const d = document.querySelector('.ed-canvas').getContext('2d').getImageData(200, 250, 600, 130).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200) n++; return n > 800; })()", "chữ hook trên bản xem trước");
+  check("xem trước: chữ hook hiện ở phần trên khung hình tại giây 0", true);
+  await ev("(() => { const c = document.querySelector('[data-overlay-on=\"hook\"]'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  check("tắt chữ hook → biến mất khỏi bản xem trước", (await whiteIn(200, 250, 600, 130)) === 0);
+  await ev("(() => { const c = document.querySelector('[data-overlay-on=\"hook\"]'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); const t = document.querySelector('[data-overlay-text=\"hook\"]'); t.value = 'Thử ngay ấ ệ ữ'; t.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  await ev("(() => { const c = document.querySelector('#ed-tiktok'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  check("bật 'Xem lớp UI TikTok' → vùng trên cùng bị phủ tối trên bản xem trước", await ev("document.querySelector('.ed-canvas').getContext('2d').getImageData(900, 20, 1, 1).data[0] < 200"));
+  await ev("(() => { const c = document.querySelector('#ed-tiktok'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); })()");
+
   await ev("document.querySelector('[data-action=\"export\"]').click()");
   await waitFor("!!document.querySelector('.ed-result:not([hidden]) video')", "xuất video");
   const exported = await ev(`(async () => {
@@ -282,6 +295,26 @@ try {
   check("tiếng AAC 48kHz dài bằng hình (lệch dưới 0,06s)", exported.acodec === "aac" && exported.rate === 48000 && Math.abs(exported.adur - exported.vdur) < 0.06, `tiếng ${exported.adur}s, hình ${exported.vdur}s`);
   check("đúng thứ tự hình: giây 1 là clip đỏ, giây 5 là clip xanh", exported.red[0] > 180 && exported.red[2] < 80 && exported.blue[2] > 180 && exported.blue[0] < 80, JSON.stringify([exported.red, exported.blue]));
   check("đúng tiếng: hai clip có tiếng, đoạn ảnh tĩnh im lặng", exported.rmsClip1 > 0.1 && exported.rmsClip2 > 0.1 && exported.rmsImage < 0.005, JSON.stringify([exported.rmsClip1, exported.rmsImage, exported.rmsClip2].map((v) => +v.toFixed(4))));
+  const layers = await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    const blob = await (await fetch(document.querySelector(".ed-result video").src)).blob();
+    const v = await new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) }).getPrimaryVideoTrack();
+    const cs = new MB.CanvasSink(v, { width: 270, height: 480, fit: "fill" });
+    const count = async (t, x, y, w, h, test) => { const d = (await cs.getCanvas(t)).canvas.getContext("2d").getImageData(x, y, w, h).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (test(d[i], d[i + 1], d[i + 2])) n++; return n; };
+    const white = (r, g, b) => r > 190 && g > 190 && b > 190;
+    const accent = (r, g, b) => r > 160 && g > 35 && g < 120 && b < 120;
+    return {
+      hookAt1: await count(1, 40, 60, 190, 40, white), hookAt5: await count(5, 40, 60, 190, 40, white),
+      priceAt1: await count(1, 60, 292, 130, 26, accent), priceAt5: await count(5, 60, 292, 130, 26, accent),
+      ctaAt1: await count(1, 40, 330, 190, 26, white), ctaAt5: await count(5, 40, 330, 190, 26, white),
+      rightColumn: await count(5, 238, 40, 30, 320, (r, g, b) => white(r, g, b) || accent(r, g, b)),
+      belowSafe: await count(5, 0, 362, 270, 110, (r, g, b) => white(r, g, b) || accent(r, g, b)),
+    };
+  })()`);
+  check("file xuất: chữ hook có ở giây 1, không còn ở giây 5", layers.hookAt1 > 100 && layers.hookAt5 === 0, JSON.stringify(layers));
+  check("file xuất: sticker giá và CTA chỉ hiện ở cuối video", layers.priceAt5 > 300 && layers.priceAt1 === 0 && layers.ctaAt5 > 300 && layers.ctaAt1 === 0, JSON.stringify(layers));
+  check("file xuất: không chữ nào lấn vào cột nút bên phải hay vùng caption phía dưới của TikTok", layers.rightColumn === 0 && layers.belowSafe === 0, JSON.stringify(layers));
+  check("file xuất không có lớp UI TikTok giả (vùng trên cùng vẫn là màu clip)", (await ev(`(async () => { const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs"); const blob = await (await fetch(document.querySelector(".ed-result video").src)).blob(); const v = await new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) }).getPrimaryVideoTrack(); const d = (await new MB.CanvasSink(v, { width: 270, height: 480, fit: "fill" }).getCanvas(1)).canvas.getContext("2d").getImageData(225, 5, 1, 1).data; return d[0]; })()`)) > 200);
   await ev("document.querySelector('[data-action=\"save-final\"]').click()");
   await waitFor("document.querySelector('[data-action=\"save-final\"]')?.textContent === 'Đã lưu lên kho ✓'", "lưu video lên kho");
   check("Lưu lên kho thành công", true);
@@ -289,8 +322,27 @@ try {
   await send("Page.reload");
   await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && document.querySelectorAll('.seg').length === 3", "mở lại trình dựng");
   check("tải lại trang: 3 đoạn còn nguyên, không đoạn nào thiếu file, điểm cắt được giữ", await ev("!document.querySelector('.seg .field-error') && document.querySelector('.ed-summary').textContent === '3 đoạn · 6.0s' && !document.querySelector('[data-action=\"export\"]').disabled"));
+  check("tải lại trang: chữ hook đã sửa được giữ", (await ev("document.querySelector('[data-overlay-text=\"hook\"]').value")) === "Thử ngay ấ ệ ữ");
+  // ----- phase 6: ảnh bìa -----
+  await ev("document.querySelector('[data-action=\"open-cover\"]').click()");
+  await waitFor("document.querySelector('.ed-cover')?.dataset.ready === '1' && !!document.querySelector('.cover-stage canvas')", "mở trình làm ảnh bìa");
+  check("ảnh bìa: chữ lấy từ coverTexts, có sticker giá", await ev("(() => { const s = document.querySelector('.ed-cover').coverState(); return s.text.length > 0 && s.stickerVisible && document.querySelectorAll('.cover-pick').length === 3; })()"));
+  await ev("document.querySelector('[data-template=\"bottom\"]').click()");
+  check("đổi bố cục 'Chữ dưới' → chữ xuống dưới, sticker vẫn căn giữa vùng an toàn", await ev("(() => { const s = document.querySelector('.ed-cover').coverState(); return s.textY === 1150 && Math.abs(s.stickerX + s.stickerW / 2 - 492) < 1; })()"));
+  await ev("(() => { const t = document.querySelector('#cover-text'); t.value = 'Bìa thử ấ ệ'; t.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  await ev("document.querySelector('[data-action=\"save-cover\"]').click()");
+  await waitFor("document.querySelectorAll('.seg').length === 4", "chèn ảnh bìa vào đầu video");
+  check("lưu ảnh bìa → chèn làm đoạn đầu dài 0,2 giây", await ev("document.querySelector('.seg-name').textContent === '1. Ảnh bìa' && document.querySelector('.seg .badge').textContent === '0.2s' && document.querySelector('.ed-summary').textContent === '4 đoạn · 6.2s'"));
+  await ev("document.querySelector('[data-action=\"save-cover\"]').click()");
+  await waitFor("document.querySelector('#toast').textContent.startsWith('Đã lưu ảnh bìa') && document.querySelectorAll('.seg').length === 4", "lưu ảnh bìa lần hai");
+  check("khối 'Chữ trên video' không in ra chữ rác", await ev("!/\\b(false|undefined|null)\\b/.test(document.querySelector('.ed-overlays').textContent)"));
+  check("lưu ảnh bìa lần hai không tạo thêm đoạn bìa", await ev("[...document.querySelectorAll('.seg-name')].filter((n) => n.textContent.includes('Ảnh bìa')).length === 1"));
+  await shot("5-cover.png");
+
   await ev("location.hash = '#/p/" + id + "'");
   await waitFor("!!document.querySelector('.final-video')", "video thành phẩm trên trang sản phẩm");
+  await waitFor("document.querySelector('.final-cover')?.complete && document.querySelector('.final-cover').naturalWidth > 0", "ảnh bìa trên trang sản phẩm");
+  check("trang sản phẩm hiện ảnh bìa 1080x1920 từ kho", await ev("(() => { const i = document.querySelector('.final-cover'); return i.naturalWidth === 1080 && i.naturalHeight === 1920 && i.getAttribute('src') === '/media/p/" + id + "/cover.png'; })()"));
   await waitFor("document.querySelector('.final-video').readyState >= 1", "video thành phẩm tải được");
   check("trang sản phẩm hiện video thành phẩm 1080x1920 từ kho, kèm nút tải", await ev("(() => { const v = document.querySelector('.final-video'); return v.getAttribute('src') === '/media/p/" + id + "/final.mp4' && v.videoWidth === 1080 && v.videoHeight === 1920 && !!document.querySelector('.final a[download]'); })()"));
   check("rời trình dựng: không còn worker hay thanh nào sót lại, không lỗi JavaScript", consoleErrors.length === 0, consoleErrors.join(" | "));

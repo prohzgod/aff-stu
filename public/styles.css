@@ -240,7 +240,17 @@ button.chip { min-height: 44px; padding: 0 14px; font-size: 0.95rem; color: var(
 .pkgbar .btn { flex: 1; max-width: 300px; padding: 0 10px; font-size: 0.92rem; }
 
 /* ----- video thành phẩm, brand kit ----- */
-.final-video { width: 100%; max-width: 300px; max-height: 70vh; border-radius: 10px; background: #000; }
+.final-grid { display: flex; gap: var(--gap); flex-wrap: wrap; align-items: flex-start; }
+.final-item { display: grid; gap: 8px; width: min(100%, 260px); }
+.final-item figcaption { justify-content: space-between; font-weight: 600; font-size: 0.9rem; }
+.final-video, .final-cover { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; background: #000; }
+.ed-left { display: grid; gap: var(--gap); min-width: 0; }
+.ov-row input[type="text"] { min-height: 40px; }
+.cover-grid { display: grid; gap: var(--gap); }
+@media (min-width: 700px) { .cover-grid { grid-template-columns: 270px minmax(0, 1fr); align-items: start; } }
+.cover-stage { width: 270px; height: 480px; border-radius: 10px; overflow: hidden; background: #000; justify-self: center; touch-action: none; }
+.cover-controls { display: grid; gap: var(--gap); min-width: 0; }
+.cover-controls input[type="range"] { flex: 1; min-width: 0; min-height: 32px; padding: 0; }
 .brand-logo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .brand-logo img { max-height: 64px; max-width: 160px; border: 1px solid var(--line); border-radius: 8px; background: repeating-conic-gradient(var(--line) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
 

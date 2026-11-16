@@ -18,6 +18,15 @@ export function formatPrice(n) {
   return s ? `${s}₫` : "";
 }
 
+// Giá rút gọn dùng trong nội dung video: 216749 → "217K", 1250000 → "1,25 triệu". Dùng chung cho server và trình duyệt.
+export function priceK(n) {
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "";
+  if (n < 1000) return `${Math.round(n)}đ`;
+  const k = Math.round(n / 1000);
+  if (k < 1000) return `${k}K`;
+  return `${String(Number((n / 1e6).toFixed(2))).replace(".", ",")} triệu`;
+}
+
 export function daysLeft(expiresAt, now = Date.now()) {
   const ms = Date.parse(expiresAt) - now;
   return Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 86400000) : 0;

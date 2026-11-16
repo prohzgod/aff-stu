@@ -11,6 +11,8 @@ import {
   OUTPUT, LIMITS, segmentDuration, totalDuration, clampTrim, moveSegment, validateTimeline, locate, kenBurnsScale,
 } from "./timeline.js";
 import { composeFrame } from "./compose.js";
+import { activeOverlays, defaultOverlays, drawTikTokUi } from "./overlays.js";
+import { loadFonts } from "./fonts.js";
 import { putClip, getClip, deleteClip, pruneOldClips } from "./local-clips.js";
 
 const IMAGE_SECONDS = 2;
@@ -51,7 +53,7 @@ function createWorker() {
 
 // ---------- màn hình ----------
 
-export function renderEditor(container, product) {
+export function renderEditor(container, product, pkg = null) {
   const storeKey = `edit:${product.id}`;
   const worker = createWorker();
   const sources = new Map(); // sourceId → { blob, url, el }  (el: <video> hoặc <img> dùng cho xem trước)
@@ -59,6 +61,8 @@ export function renderEditor(container, product) {
   let brand = { handle: "", position: "tl", watermark: true, logo: null };
   let logoImage = null, logoBlob = null;
   let useWatermark = true;
+  let overlays = defaultOverlays(product, pkg);
+  let showTikTok = false;
   let canExport = false;
   let exporting = false;
   let result = null; // { blob, url, info }
@@ -81,6 +85,11 @@ export function renderEditor(container, product) {
   const progress = h("progress", { class: "ed-progress", max: "1", value: "0", hidden: true });
   const progressLabel = h("span", { class: "muted", hidden: true });
   const resultBox = h("section", { class: "card ed-result", hidden: true });
+  const overlayBox = h("section", { class: "card ed-overlays" });
+  const coverBox = h("section", { class: "card ed-cover", hidden: true });
+  const coverButton = h("button", { class: "btn", type: "button", "data-action": "open-cover", onclick: openCover }, "🖼 Tạo ảnh bìa");
+  const tiktokToggle = h("input", { id: "ed-tiktok", type: "checkbox" });
+  tiktokToggle.addEventListener("change", () => { showTikTok = tiktokToggle.checked; if (!playing) drawCurrent(); });
 
   const productMedia = [
     ...(Array.isArray(product.images) ? product.images : []).filter((im) => im?.stored).map((im, i) => ({ label: `Ảnh ${i + 1}`, key: im.stored, kind: "image" })),
@@ -101,11 +110,17 @@ export function renderEditor(container, product) {
     h("a", { class: "back", href: `#/p/${product.id}` }, "‹ Về sản phẩm"),
     h("section", { class: "card" }, h("h1", {}, "Dựng video"), h("p", { class: "muted" }, product.title), notice, drop),
     h("div", { class: "ed-main" },
-      h("section", { class: "card ed-timeline" }, h("h2", {}, "Các đoạn"), listEl, summary, problems),
+      h("div", { class: "ed-left" },
+        h("section", { class: "card ed-timeline" }, h("h2", {}, "Các đoạn"), listEl, summary, problems),
+        overlayBox,
+        coverBox,
+      ),
       h("section", { class: "card ed-preview" },
         h("h2", {}, "Xem trước"),
         canvas,
-        h("div", { class: "row wrap" }, playButton, timeLabel, markRow),
+        h("div", { class: "row wrap" }, playButton, timeLabel),
+        h("div", { class: "row wrap" }, markRow, h("label", { class: "check" }, tiktokToggle, "Xem lớp UI TikTok")),
+        h("div", { class: "row wrap" }, coverButton),
         h("div", { class: "row wrap" }, exportButton, cancelButton, progress, progressLabel),
       ),
     ),
@@ -114,7 +129,7 @@ export function renderEditor(container, product) {
 
   // ----- lưu trạng thái trên thiết bị -----
   const persist = () => {
-    try { localStorage.setItem(storeKey, JSON.stringify({ segments, useWatermark })); } catch { /* đầy bộ nhớ: bỏ qua */ }
+    try { localStorage.setItem(storeKey, JSON.stringify({ segments, useWatermark, overlays })); } catch { /* đầy bộ nhớ: bỏ qua */ }
   };
 
   function setSegments(next, { keepResult = false } = {}) {
@@ -293,6 +308,7 @@ export function renderEditor(container, product) {
 
   const watermark = () => (useWatermark && brand.watermark && (logoImage || brand.handle) ? { handle: brand.handle, logo: logoImage, position: brand.position } : null);
 
+  let bare = false; // true khi chụp frame làm nền ảnh bìa: chỉ vẽ hình, không chữ, không watermark
   function drawSegment(seg, offset) {
     const src = seg && sources.get(seg.sourceId);
     let source = null;
@@ -302,7 +318,13 @@ export function renderEditor(container, product) {
       if (width && height) source = { width, height, draw: (c, x, y, w, hh) => c.drawImage(el, x, y, w, hh) };
     }
     const zoom = seg?.type === "image" && seg.kenBurns ? kenBurnsScale(offset / Math.max(seg.duration, 0.001)) : 1;
-    composeFrame(ctx, { source, fit: seg?.fit || "cover", zoom, watermark: watermark() });
+    const cover = Boolean(seg?.isCover); // ảnh bìa đã có chữ riêng: không phủ lớp chữ hay watermark
+    composeFrame(ctx, {
+      source, fit: seg?.fit || "cover", zoom,
+      overlays: cover || bare ? [] : activeOverlays(overlays, time, totalDuration(segments)),
+      watermark: cover || bare ? null : watermark(),
+    });
+    if (showTikTok && !bare) drawTikTokUi(ctx);
     timeLabel.textContent = `${seconds(time)} / ${seconds(totalDuration(segments))}`;
   }
 
@@ -382,6 +404,111 @@ export function renderEditor(container, product) {
   playButton.addEventListener("click", () => (playing ? stop() : play()));
   markToggle.addEventListener("change", () => { useWatermark = markToggle.checked; clearResult(); persist(); if (!playing) drawCurrent(); });
 
+  // ----- chữ trên video -----
+  function changeOverlay(kind, change) {
+    overlays = { ...overlays, [kind]: { ...overlays[kind], ...change } };
+    clearResult();
+    persist();
+    if (!playing) drawCurrent();
+  }
+
+  function drawOverlayBox() {
+    const hooks = (Array.isArray(pkg?.hooks) ? pkg.hooks : []).filter((x) => x?.onScreen);
+    const row = (kind, label, hint, extra) => {
+      const on = h("input", { type: "checkbox", checked: overlays[kind].enabled, "data-overlay-on": kind });
+      const text = h("input", { type: "text", maxlength: "120", value: overlays[kind].text, "data-overlay-text": kind, "aria-label": label });
+      on.addEventListener("change", () => changeOverlay(kind, { enabled: on.checked }));
+      text.addEventListener("input", () => changeOverlay(kind, { text: text.value }));
+      return h("div", { class: "field ov-row" }, h("label", { class: "check" }, on, label), extra?.(text), text, h("p", { class: "hint" }, hint));
+    };
+    overlayBox.replaceChildren(
+      h("h2", {}, "Chữ trên video"),
+      row("hook", "Chữ hook", "Hiện trong 3 giây đầu, ở phần trên khung hình.", (text) => hooks.length > 0 && h("div", { class: "row wrap" },
+        hooks.map((x, i) => h("button", { class: "chip ov-hook", type: "button", "data-hook": String(i), onclick: () => { text.value = x.onScreen; changeOverlay("hook", { text: x.onScreen, enabled: true }); drawOverlayBox(); } }, x.onScreen)))),
+      row("price", "Sticker giá", "Hiện trong 3 giây cuối."),
+      row("cta", "Lời kêu gọi", "Hiện trong 2,5 giây cuối, sát mép dưới vùng an toàn."),
+      ...(pkg ? [] : [h("p", { class: "hint" }, "Sản phẩm chưa có gói đăng bài nên chữ hook chưa có sẵn. Tạo gói ở trang sản phẩm rồi quay lại, hoặc tự gõ.")]),
+    );
+  }
+
+  // ----- ảnh bìa -----
+  // Trả canvas xem trước đang hiện đúng frame tại thời điểm t, chỉ có hình (không chữ, không watermark).
+  async function frameAt(t) {
+    stop();
+    bare = true;
+    try {
+      const at = locate(segments, t);
+      const seg = at && segments[at.index];
+      const src = seg && sources.get(seg.sourceId);
+      time = Math.max(0, t);
+      if (seg?.type === "clip" && src) {
+        const el = src.el;
+        if (Math.abs(el.currentTime - at.sourceTime) > 0.01 || el.readyState < 2) {
+          await new Promise((resolve) => {
+            const done = () => { el.removeEventListener("seeked", done); clearTimeout(timer); resolve(); };
+            const timer = setTimeout(done, 2000);
+            el.addEventListener("seeked", done);
+            el.currentTime = at.sourceTime;
+          });
+        }
+      }
+      drawSegment(seg || null, at?.offset || 0);
+      const copy = document.createElement("canvas");
+      copy.width = canvas.width;
+      copy.height = canvas.height;
+      copy.getContext("2d").drawImage(canvas, 0, 0);
+      return copy;
+    } finally {
+      bare = false;
+      drawCurrent();
+    }
+  }
+
+  async function saveCover({ blob, insert }) {
+    await api(`/api/products/${product.id}/upload/cover.png`, { method: "PUT", body: blob });
+    // Mỗi video chỉ có một đoạn ảnh bìa: bỏ đoạn cũ (nếu có) trước khi chèn đoạn mới.
+    const old = segments.filter((s) => s.isCover);
+    let next = segments.filter((s) => !s.isCover);
+    for (const s of old) {
+      const src = sources.get(s.sourceId);
+      if (src) URL.revokeObjectURL(src.url);
+      sources.delete(s.sourceId);
+      deleteClip(product.id, s.sourceId).catch(() => {});
+    }
+    if (insert) {
+      const sourceId = `cover-${newId()}`;
+      attach(sourceId, blob, "image");
+      await putClip(product.id, sourceId, blob, "cover.png").catch(() => {});
+      next = [{ id: newId(), type: "image", isCover: true, name: "Ảnh bìa", sourceId, r2Key: null, width: OUTPUT.width, height: OUTPUT.height, fit: "cover", duration: 0.2, kenBurns: false }, ...next];
+    }
+    setSegments(next);
+    toast(insert ? "Đã lưu ảnh bìa và chèn vào đầu video" : "Đã lưu ảnh bìa");
+  }
+
+  async function openCover() {
+    if (!segments.some((s) => !s.isCover && sources.has(s.sourceId))) return toast("Thêm ít nhất một clip hoặc ảnh trước khi làm ảnh bìa");
+    coverButton.disabled = true;
+    coverBox.hidden = false;
+    try {
+      const { openCoverEditor } = await import("./cover-editor.js");
+      const body = segments.filter((s) => !s.isCover);
+      const offset = segments[0]?.isCover ? segmentDuration(segments[0]) : 0;
+      await openCoverEditor(coverBox, {
+        product, pkg, logo: brand.logo,
+        total: totalDuration(body), fps: Math.round(body.find((s) => s.type === "clip")?.fps || 30), startTime: 0,
+        frameAt: (t) => frameAt(t + offset),
+        onSave: saveCover,
+        onClose: () => { coverBox.hidden = true; coverBox.replaceChildren(); delete coverBox.dataset.ready; },
+      });
+      coverBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      coverBox.hidden = true;
+      toast(err.message);
+    } finally {
+      coverButton.disabled = false;
+    }
+  }
+
   // ----- xuất -----
   function clearResult() {
     if (result) URL.revokeObjectURL(result.url);
@@ -412,6 +539,7 @@ export function renderEditor(container, product) {
       const job = {
         segments: segments.map((s) => ({ ...s, blob: sources.get(s.sourceId).blob })),
         watermark: watermark() ? { handle: brand.handle, position: brand.position, logoBlob } : null,
+        overlays,
       };
       const { buffer, info } = await worker.render(job, (value) => {
         progress.value = value;
@@ -474,6 +602,11 @@ export function renderEditor(container, product) {
   async function restore() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(storeKey) || "null"); } catch { saved = null; }
+    for (const kind of ["hook", "price", "cta"]) {
+      const o = saved?.overlays?.[kind];
+      if (o && typeof o.enabled === "boolean" && typeof o.text === "string") overlays[kind] = { enabled: o.enabled, text: o.text.slice(0, 120) };
+    }
+    drawOverlayBox();
     if (saved && typeof saved.useWatermark === "boolean") {
       useWatermark = saved.useWatermark;
       markToggle.checked = useWatermark;
@@ -516,7 +649,9 @@ export function renderEditor(container, product) {
       notice.textContent = "Thiết bị này chưa xuất được video. Hãy dựng trên Chrome hoặc Edge trên máy tính. Bạn vẫn sắp xếp và xem trước được ở đây.";
       notice.hidden = false;
     }
-    await Promise.all([restore(), loadBrand()]);
+    drawOverlayBox();
+    await Promise.all([restore(), loadBrand(), loadFonts(document.fonts)]);
+    if (!playing) drawCurrent();
     drawList();
     container.dataset.ready = "1";
   })();

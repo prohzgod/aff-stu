@@ -2,6 +2,14 @@
 
 Mới nhất ở trên. Mỗi mục: quyết định, lý do. Thứ đã có trong `docs/spec/` thì không chép lại ở đây.
 
+## 2026-11-16 · Phase 6: các quyết định khi dựng
+- **Lớp chữ có vị trí và thời điểm cố định:** hook ở trên (3 giây đầu), sticker giá phía trên CTA (3 giây cuối), CTA sát mép dưới vùng an toàn (2,5 giây cuối). Chữ dài thì tự thu cỡ rồi xuống dòng, quá dài thì cắt kèm dấu ba chấm. Phụ đề (phase 7) sẽ nằm phía trên sticker giá.
+- **Đoạn ảnh bìa không bị phủ chữ hay watermark** (nó đã có chữ riêng). Mỗi video chỉ có một đoạn ảnh bìa.
+- **`priceK` chuyển về `public/lib/format.js`** để trình duyệt và server dùng chung một bản; `lib/generate.js` import lại.
+- **Konva chỉ tải khi mở trình làm ảnh bìa** (thẻ script chèn lúc cần), không nằm trong lần tải đầu của trình dựng.
+- **Lớp UI TikTok giả chỉ vẽ lên bản xem trước,** không đi vào hàm `composeFrame`, nên không thể lọt vào file xuất.
+- **Server nhận `cover.png` tối đa 8MB,** kiểm chữ ký PNG. `lib/store.js` có bảng `UPLOADS` (tên file → content-type) dùng chung cho mọi file thành phẩm.
+
 ## 2026-11-16 · Phase 5: các quyết định khi dựng
 - **Bản thử kỹ thuật không nằm trong repo.** Làm trong thư mục nháp với clip thật, rồi dựng thẳng phần thật; trang dựng video chính là thứ để chủ dự án thử trên điện thoại. Kết quả bản thử: 7s video trong 2,3s, đúng số frame.
 - **Tiếng dài hơn hình khoảng 0,03s** ở cuối file do bộ mã hoá AAC đệm thêm. Không phải trôi: vị trí mẫu suy từ vị trí frame. Kiểm tra tự động cho phép lệch dưới 0,06s.
