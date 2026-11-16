@@ -136,7 +136,7 @@ function pasteDialog() {
         toast("Đã thêm sản phẩm");
         location.hash = `#/p/${id}`;
       } catch (err) {
-        if (err.status === 401) dialog.close();
+        if (notifyAuth(err)) dialog.close();
         else fail(err.message);
       } finally {
         submit.disabled = false;
@@ -163,7 +163,8 @@ async function viewList(seq) {
   try {
     ({ items } = await api("/api/products"));
   } catch (err) {
-    if (seq === renderSeq && err.status !== 401) show(errorState(err.message, route));
+    if (notifyAuth(err)) return;
+    if (seq === renderSeq) show(errorState(err.message, route));
     return;
   }
   if (seq !== renderSeq) return;
@@ -223,7 +224,7 @@ async function removeProduct(product) {
     toast("Đã xoá sản phẩm");
     location.hash = "#/";
   } catch (err) {
-    if (err.status !== 401) toast(err.message);
+    toast(err.message);
   }
 }
 
@@ -265,7 +266,7 @@ async function viewDetail(id, seq) {
   try {
     data = await api(`/api/products/${encodeURIComponent(id)}`);
   } catch (err) {
-    if (seq !== renderSeq || err.status === 401) return;
+    if (notifyAuth(err) || seq !== renderSeq) return;
     if (err.status === 404) {
       show(h("div", { class: "state" },
         h("p", { class: "state-title" }, "Sản phẩm không còn"),
@@ -286,6 +287,12 @@ async function viewDetail(id, seq) {
 }
 
 // ---------- router ----------
+
+// api() đã chuyển sang #/settings khi gặp 401; ở đây chỉ nói cho người dùng biết vì sao.
+function notifyAuth(err) {
+  if (err.status === 401) toast(err.message);
+  return err.status === 401;
+}
 
 function route() {
   const seq = ++renderSeq;

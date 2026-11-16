@@ -123,6 +123,7 @@ try {
   await ev("localStorage.setItem('APP_TOKEN', 'sai'); location.hash = '#/'");
   await waitFor("location.hash === '#/settings' && !!document.querySelector('#token')", "401 → settings");
   check("token sai → chuyển tới #/settings", true);
+  check("token sai → có thông báo lý do", (await ev("document.querySelector('#toast').hidden ? '' : document.querySelector('#toast').textContent")) === "Token không đúng. Nhập lại token.");
 
   check("không có lỗi JavaScript", consoleErrors.length === 0, consoleErrors.join(" | "));
   check("không có alert nào từ dữ liệu sản phẩm", dialogs.every((d) => d.startsWith("Xoá sản phẩm này")));
