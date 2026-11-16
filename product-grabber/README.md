@@ -13,7 +13,7 @@ Lấy dữ liệu từ trang sản phẩm TikTok Shop **bạn đang mở**: tên
 2. Bấm icon → popup hiện thông tin + lưới ảnh (bấm ảnh để bỏ chọn).
 3. **Tải ảnh + video** → lưu vào `Downloads/tiktokshop/<productId>/` (img_01.jpg…, video_header.mp4, product.json).
 4. **Copy JSON** → dán vào tool khác.
-5. **Gửi sang app** → bấm ⚙, nhập URL Supabase Edge Function hoặc n8n webhook; extension POST JSON sản phẩm tới đó.
+5. **Gửi sang app** → bấm ⚙, nhập Endpoint `https://<tên-app>.pages.dev/api/products` và Authorization `Bearer <APP_TOKEN>` (gõ cả chữ `Bearer `). Extension POST JSON sản phẩm tới Affiliate Studio rồi mở thẳng trang sản phẩm trong app. Endpoint khác (Supabase, n8n…) vẫn dùng được; khi đó extension chỉ báo "Đã gửi sang app".
 
 ## Lưu ý
 - Nếu bạn bấm sang sản phẩm khác **trong** trang TikTok (không tải lại), dữ liệu nhúng vẫn là của sản phẩm cũ → extension sẽ báo, bấm F5 rồi thử lại.
@@ -24,7 +24,8 @@ Lấy dữ liệu từ trang sản phẩm TikTok Shop **bạn đang mở**: tên
 ## Cấu trúc
 - `manifest.json` – khai báo MV3, quyền.
 - `extractor.js` – hàm `extractTikTokShopProduct()` được inject vào trang, trả JSON chuẩn hoá.
-- `popup.html / popup.css / popup.js` – giao diện, tải file, gửi webhook.
+- `popup.html / popup.css / popup.js` – giao diện, tải file, gửi sang app.
+- `send.js` – xử lý kết quả gửi: mở tab trang sản phẩm (chỉ khi cùng origin với endpoint), thông báo lỗi.
 
 ## JSON đầu ra (rút gọn)
 ```json

@@ -1,4 +1,4 @@
-/* global extractTikTokShopProduct */
+/* global extractTikTokShopProduct, ProductGrabberSend */
 const $ = (id) => document.getElementById(id);
 let product = null;
 const selected = new Set();
@@ -133,7 +133,16 @@ $("send").onclick = async () => {
       headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
       body: JSON.stringify(selectedProduct()),
     });
-    setStatus(res.ok ? "Đã gửi sang app." : `Gửi lỗi: HTTP ${res.status}`, !res.ok);
+    let data = null;
+    try { data = await res.json(); } catch { /* endpoint không trả JSON (vd webhook n8n) */ }
+    if (!res.ok) {
+      setStatus(ProductGrabberSend.sendErrorMessage(res.status, data), true);
+      return;
+    }
+    // Affiliate Studio trả { id, url }: mở thẳng trang sản phẩm trong app.
+    const appUrl = ProductGrabberSend.appUrlFromResponse(endpoint, data);
+    setStatus(appUrl ? "Đã gửi sang app, đang mở trang sản phẩm…" : "Đã gửi sang app.");
+    if (appUrl) await chrome.tabs.create({ url: appUrl });
   } catch (e) {
     setStatus("Gửi lỗi: " + e.message, true);
   } finally {

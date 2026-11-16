@@ -159,14 +159,15 @@ Mọi `/api/*`: header `Authorization: Bearer <APP_TOKEN>`. Middleware trả COR
 |---|---|---|
 | GET | `/api/products` | Danh sách từ `i/` (lọc quá hạn): `{items:[{id,title,price,thumb,createdAt,expiresAt,hasPackage}]}` |
 | POST | `/api/products` | Nhận JSON mục 4. Validate `title` + `images[]`. **Sao chép ngay** ảnh (original → fallback preview) và video (url → backupUrl) vào R2 với header `Referer: <url sản phẩm>` + UA trình duyệt. Lỗi thì giữ link gốc (`stored: null`). Ghi `product.json` + chỉ mục. Trả `201 {id, url:"<origin>/#/p/{id}", mirrored, videos}` |
-| GET | `/api/products/:id` | `{product, package, expiresAt}`; 404 nếu không có/quá hạn |
+| GET | `/api/products/:id` | `{product, package, final, expiresAt}` (`final`: `{url, size, uploadedAt}` hoặc `null`); 404 nếu không có/quá hạn |
 | DELETE | `/api/products/:id` | Xoá mọi `p/{id}/*` + chỉ mục |
 | POST | `/api/products/:id/generate` | Body `{tone?, notes?, faceless?, persona?}` → sinh gói (mục 6), lưu `package.json`, cập nhật `hasPackage` |
-| PUT | `/api/products/:id/package` | Lưu bản người dùng sửa (caption, hashtag, ghim…) + `editedAt` |
-| PUT | `/api/products/:id/upload/:name` | `name` ∈ `final.mp4 | cover.png | subs.srt`. Body nhị phân, ≤ 95MB (giới hạn body của Pages Functions ~100MB). Cập nhật `hasFinal` |
+| GET | `/api/products/:id/generate` | Query `?tone=&notes=&faceless=` → `{prompt}`: khối văn bản (system prompt + dữ liệu + schema) cho chế độ thủ công (mục 6.4) |
+| PUT | `/api/products/:id/package` | Body `{caption?, hashtags?, pinnedComment?}`: lưu bản người dùng sửa + `editedAt`. Body `{raw}`: nội dung dán từ chat AI → parse lỏng + `normalize()` → lưu với `source: "manual"`. Trả `{package}` |
+| PUT | `/api/products/:id/upload/:name` | `name` ∈ `final.mp4` (phase 5) `| cover.png` (phase 6) `| subs.srt` (phase 7). Body nhị phân; `final.mp4` ≤ 70MB và phải có chữ ký MP4. Cập nhật `hasFinal`. Trả `{ok, url, size}` |
 | GET/PUT | `/api/products/:id/edit` | Đọc/lưu `edit.json` (dự án hậu kỳ, để mở tiếp trên máy khác) |
 | POST | `/api/transcribe` | Body `audio/wav` 16kHz mono (30s ≈ 1MB) + query `?lang=vi&prompt=<tên SP, thương hiệu>`. Gọi Groq `whisper-large-v3` với `response_format=verbose_json`, `timestamp_granularities[]=word`. Sau đó (nếu có LLM) chuẩn hoá dấu câu, sửa tên thương hiệu **giữ nguyên timestamp**. Trả `{words:[{w,start,end}], segments:[{text,start,end}]}` |
-| GET/PUT | `/api/brandkit` | Logo (PNG base64 hoặc upload riêng), @tên kênh, font, màu nhấn, vị trí watermark, style phụ đề mặc định |
+| GET/PUT | `/api/brandkit` | `{handle, position: tl|tr|bl|br, watermark, logo}`; logo là PNG nhúng dạng data URL, tối đa khoảng 300KB. Font, màu nhấn và style phụ đề thêm ở phase 6–7 |
 | GET | `/media/p/{id}/{file}` | Không cần token. Hỗ trợ `Range` → 206 (iPhone cần để phát video), `ETag`, `Cache-Control: private, max-age=86400`. Chỉ chấp nhận regex `^p\/[a-z0-9]+\/[\w.-]+$` |
 
 Giới hạn cần nhớ: Workers free = 50 subrequest/lần gọi (12 ảnh + 2 video + LLM vẫn dư); ảnh ≤15MB, video ≤60MB.

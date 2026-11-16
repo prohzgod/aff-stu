@@ -5,6 +5,7 @@ compatibility_date = "2026-11-01"
 [vars]
 RETENTION_DAYS = "7"
 LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+LLM_MODEL = "gemini-3.8-flash" # model Flash có free tier, tra ngày 16/11/2026; đổi ở đây khi Google đổi hạn mức
 
 [[r2_buckets]]
 binding = "BUCKET"

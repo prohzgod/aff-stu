@@ -2,6 +2,53 @@
 
 Mới nhất ở trên. Mỗi mục: quyết định, lý do. Thứ đã có trong `docs/spec/` thì không chép lại ở đây.
 
+## 2026-11-16 · Phase 5: các quyết định khi dựng
+- **Bản thử kỹ thuật không nằm trong repo.** Làm trong thư mục nháp với clip thật, rồi dựng thẳng phần thật; trang dựng video chính là thứ để chủ dự án thử trên điện thoại. Kết quả bản thử: 7s video trong 2,3s, đúng số frame.
+- **Tiếng dài hơn hình khoảng 0,03s** ở cuối file do bộ mã hoá AAC đệm thêm. Không phải trôi: vị trí mẫu suy từ vị trí frame. Kiểm tra tự động cho phép lệch dưới 0,06s.
+- **Cờ chỉ mục suy từ file thật.** `refreshIndex` trong `lib/store.js` đặt `hasPackage`/`hasFinal` theo việc `package.json`/`final.mp4` có tồn tại, nên hai cờ không ghi đè nhau.
+- **Upload `final.mp4` tối đa 70MB** và phải có chữ ký MP4 (`ftyp`). Spec ghi 95MB; hạ xuống vì server đọc cả file vào RAM để kiểm chữ ký, và video 60s ở 8 Mbps chỉ khoảng 62MB.
+- **Logo brand kit** là PNG nhúng trong `cfg/brandkit.json` (data URL, khoảng 300KB), không nhận SVG hay link ngoài. Trình duyệt thu ảnh về cạnh dài 512px trước khi gửi.
+- **Trạng thái dựng lưu trên thiết bị:** danh sách đoạn ở `localStorage["edit:{id}"]`, file clip ở IndexedDB (`public/editor/local-clips.js`), tự dọn sau 7 ngày. `edit.json` trên server là việc của phase 8.
+- **Đoạn lấy từ kho** (ảnh/video sản phẩm) không lưu vào IndexedDB; khi mở lại thì tải lại từ `/media`.
+- **Bitrate:** hình 8 Mbps, tiếng 160 kbps, keyframe mỗi 2 giây.
+
+## 2026-11-16 · Thiết kế Hậu kỳ đã duyệt; luật 2 đã sửa
+Chủ dự án duyệt `docs/superpowers/specs/2026-11-16-hau-ky-design.md` và bảo dựng phase 5. Laptop là máy dựng chính; Android và iPhone phải xem, tải, chia sẻ thành phẩm trọn vẹn; dựng trên điện thoại là phụ. Luật 2 trong `docs/RULES.md` đã sửa để cho phép thư viện tự host trong `public/editor/vendor/`. Ba chỗ lệch spec mục 9 (tiếng mã hoá lại, bỏ WebM, upload thành phẩm ở phase 5) đã được chép vào `docs/spec/`.
+
+## 2026-11-16 · Clip Flow thật và Mediabunny (ghi nhận trước khi dựng phase 5)
+Clip mẫu của chủ dự án nằm ở `example-input/` (đã git-ignore): 720x1280, H.264 + AAC stereo 128kbps, **10 giây** (không phải 8 như spec giả định), khoảng 2,8 Mbps, 3,6MB. Chưa đọc được fps.
+Mediabunny bản mới nhất lúc tra là **1.66.0**, giấy phép MPL-2.0, file dùng cho trình duyệt là `dist/bundles/mediabunny.min.mjs` (khoảng 757KB). Các lớp đã xác nhận có trong bản này: `Input`, `BlobSource`, `ALL_FORMATS`, `VideoSampleSink` (`samplesAtTimestamps`), `AudioBufferSink` (`buffers`), `Output`, `Mp4OutputFormat`, `BufferTarget`, `CanvasSource` (`add(timestamp, duration)`), `AudioBufferSource` (`add(AudioBuffer)`), `AudioSampleSource`, `canEncodeVideo`, `canEncodeAudio`, `QUALITY_HIGH`. Chưa chạy thử dòng code nào với nó.
+
+## 2026-11-16 · Service worker: thêm file vào app thì thêm vào `SHELL`
+`public/sw.js` lưu sẵn danh sách `SHELL` viết tay (không có build step để sinh tự động). `test/sw.test.js` kiểm mọi `import` của các module chính đều nằm trong danh sách và mọi file trong danh sách đều tồn tại. Đổi cách cache thì tăng số trong `CACHE` để bản cũ bị dọn.
+
+## 2026-11-16 · Extension chỉ mở URL cùng origin với endpoint
+Sau khi gửi, extension mở `url` do server trả về, nhưng chỉ khi nó cùng origin với endpoint đã cấu hình (`product-grabber/send.js`). Lý do: endpoint là thứ người dùng tự nhập, một endpoint lạ không được phép bắt extension mở trang tuỳ ý. Endpoint không trả `url` (webhook khác) thì extension chạy như cũ.
+
+## 2026-11-16 · Icon app: khung video dọc, không dùng tam giác play trên nền đỏ
+Bản đầu (nền đỏ, tam giác play trắng) quá giống logo YouTube. Icon hiện tại là khung 9:16 trắng trên nền màu nhấn, vẽ bằng `scripts/make-icons.mjs`.
+
+## 2026-11-16 · Model mặc định: `gemini-3.8-flash`
+Tra trang pricing của Gemini API ngày 16/11/2026: `gemini-3.8-flash` (Flash mới nhất, không gắn nhãn preview) và `gemini-3.5-flash-lite` đều "Free of charge"; trang không công bố RPM/RPD cho free tier. Chọn 3.8-flash vì cần câu chữ tiếng Việt tự nhiên; nếu hay gặp 429 thì đổi `LLM_MODEL` sang `gemini-3.5-flash-lite`. Trang OpenAI-compatible không nói rõ có nhận `response_format: json_object` không, nên `callLlm` gặp 400 thì thử lại một lần không kèm nó.
+
+## 2026-11-16 · Chữ "trị" đứng riêng cũng bị bỏ khỏi gói
+Tiêu chí phase 3 đòi không có từ "trị". `FORBIDDEN` trong `lib/generate.js` nay gồm cả "trị" đứng riêng ("trị mụn", "trị thâm") và "điều trị", trừ "giá trị". Áp dụng cho gói dựng sẵn, kết quả AI và nội dung dán ở chế độ thủ công. Phần người dùng tự sửa trong ô caption/hashtag/bình luận ghim được lưu nguyên văn, không lọc.
+
+## 2026-11-16 · Chế độ thủ công đi qua server
+Thêm `GET /api/products/:id/generate` trả prompt (đã ghi vào spec mục 5) và `PUT /api/products/:id/package` nhận `{raw}`. Lý do: phần dựng prompt và `normalize()` nằm ở `lib/generate.js` phía server, trình duyệt không import được và không nên có hai bản.
+
+## 2026-11-16 · Hậu kiểm giá trong nội dung được tạo
+`normalize()` thêm cảnh báo khi nội dung có số dạng "199K" không khớp giá hiện tại, giá gốc hay số đã bán của sản phẩm. Không tự sửa số, chỉ cảnh báo.
+
+## 2026-11-16 · Phase 2: tự lưu gói để phase 3 (đã làm ở phase 3)
+`PUT /api/products/:id/package` và tự lưu (debounce) thuộc phase 3 theo spec mục 11. Ở phase 2 các ô caption/hashtag/bình luận ghim sửa được, dùng cho copy và zip, nhưng mất khi tải lại trang.
+
+## 2026-11-16 · Gói dựng sẵn: cách viết để không bịa
+`lib/generate.js` chỉ dùng tiêu đề, giá, % giảm, số đã bán (từ 100 trở lên), rating, tên shop và thông số đầu tiên. Từ khớp `FORBIDDEN` bị bỏ khỏi tiêu đề/mô tả trước khi dựng. "Nỗi đau" theo ngành viết trung tính, không gán công dụng. Khi chưa chọn hook, mẫu có người nói dùng câu "Mọi người xem thử <tên> nè".
+
+## 2026-11-16 · `h()` và `toast()` chuyển sang `public/lib/dom.js`
+Để `public/app.js` và `public/views/package.js` cùng dùng. Phần gói đăng bài nằm ở `public/views/package.js`.
+
 ## 2026-11-16 · `/media` chỉ phục vụ đúng loại cho ảnh raster và video
 Sau review phase 1: `lib/mirror.js` chỉ lưu `image/jpeg|png|webp|gif|avif` và `video/mp4|webm|quicktime` (video `application/octet-stream` lưu thành `video/mp4`). `/media` trả mọi loại khác dưới dạng `application/octet-stream` kèm `Content-Disposition: attachment`, và luôn có `Content-Security-Policy: default-src 'none'; sandbox`. Lý do: `/media` không cần token và cùng origin với app giữ token trong localStorage; một file SVG có script mở trực tiếp sẽ đọc được token. Hệ quả cho phase sau: file mới muốn hiển thị trực tiếp qua `/media` phải thêm vào danh sách trong `lib/util.js`.
 

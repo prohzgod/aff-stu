@@ -14,11 +14,12 @@ Clip/ảnh đầu vào (File từ máy, hoặc media trên R2)
        4. phụ đề (từ đang nói được tô màu)
        5. làm nét nhẹ (unsharp) khi nguồn < 1080p
   → WebCodecs VideoEncoder H.264 High, 30fps, ~8 Mbps
-  → audio: giữ nguyên AAC của clip (passthrough); nối các đoạn audio theo timeline
+  → audio: giải mã, ghép theo timeline (đoạn ảnh/tắt tiếng là khoảng lặng), mã hoá lại AAC 48kHz stereo
   → Mediabunny mux MP4 (fastStart) → Blob → tải về / chia sẻ / upload R2
 ```
 - Không dùng ffmpeg.wasm (chậm hơn native nhiều lần, file wasm nặng, core GPL).
-- Thiết bị không encode được H.264 → fallback WebM (VP9) + cảnh báo.
+- Thiết bị không encode được H.264 → báo rõ và gợi ý dựng trên Chrome/Edge máy tính (không có đường dự phòng WebM: file WebM không phát được trên iPhone).
+- Tiếng không passthrough: vị trí mẫu tiếng suy từ vị trí frame của cùng một bảng thời lượng, nên tiếng không lệch hình. Bộ mã hoá AAC thêm khoảng 0,03 giây đệm ở cuối file.
 - Xử lý **tuần tự từng video**, giải phóng `VideoFrame.close()` ngay để không tràn RAM (iPhone).
 - Thanh tiến trình theo % frame; nút Huỷ.
 

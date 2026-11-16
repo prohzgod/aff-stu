@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeBucket } from "./helpers/fake-bucket.js";
 import { indexKey } from "../lib/util.js";
-import { saveProduct, getProduct, getPackage, listProducts, deleteProduct } from "../lib/store.js";
+import { saveProduct, getProduct, getPackage, listProducts, deleteProduct, savePackage } from "../lib/store.js";
 
 const DAY = 86400000;
 const mk = (id, createdMs, title) => ({
@@ -24,6 +24,7 @@ test("lưu rồi đọc lại; danh sách mới nhất trước", async () => {
   assert.deepEqual(items.map((i) => i.title), ["Mới", "Cũ"]);
   assert.equal(items[0].id, "bbbbbbbbbb");
   assert.equal(items[0].hasPackage, false);
+  assert.equal(items[0].hasFinal, false);
   assert.equal(items[0].price, 216749);
   assert.equal(items[0].thumb, "/media/p/bbbbbbbbbb/img_01.jpg");
   assert.equal(items[0].expiresAt, new Date(now - 1000 + 7 * DAY).toISOString());
@@ -94,4 +95,17 @@ test("emoji nằm đúng chỗ cắt 80 ký tự: vẫn lưu được", async ()
   const b = makeBucket(), now = Date.now(), title = "a".repeat(79) + "🔥🔥";
   await saveProduct(b, mk("jjjjjjjjjj", now, title));
   assert.equal((await listProducts(b, 7, now))[0].title, "a".repeat(79) + "🔥");
+});
+
+test("savePackage: đọc lại được, danh sách báo hasPackage, các trường chỉ mục khác giữ nguyên", async () => {
+  const b = makeBucket(), now = Date.now(), p = mk("kkkkkkkkkk", now, "Có gói");
+  await saveProduct(b, p);
+  await savePackage(b, p, { caption: "x" });
+  assert.deepEqual(await getPackage(b, "kkkkkkkkkk"), { caption: "x" });
+  const [item] = await listProducts(b, 7, now);
+  assert.equal(item.hasPackage, true);
+  assert.equal(item.title, "Có gói");
+  assert.equal(item.price, 216749);
+  assert.equal(item.thumb, "/media/p/kkkkkkkkkk/img_01.jpg");
+  assert.equal((await b.list({ prefix: "i/" })).objects.length, 1);
 });

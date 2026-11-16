@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Product Grabber (TikTok Shop VN)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lấy tên, giá, ảnh gốc, video và mô tả từ trang sản phẩm TikTok Shop đang mở.",
   "permissions": ["activeTab", "scripting", "downloads", "storage"],
   "host_permissions": [

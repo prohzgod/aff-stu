@@ -14,3 +14,17 @@ Node 22 coi mọi file trong `test/` là test. Script `npm test` vì vậy dùng
 
 ## Test với nguồn dữ liệu vô tận phải có giới hạn thời gian
 Một test đọc stream không có điểm dừng sẽ treo cả `npm test` nếu code đọc hết body. Script test vì vậy có `--test-timeout=30000`.
+
+## `unzip` có sẵn trên macOS làm hỏng tên file có dấu
+Info-ZIP 6.0 của macOS bỏ qua cờ UTF-8 (bit 11) nên báo "Illegal byte sequence" với zip hợp lệ. Test zip vì vậy giải nén bằng `zipfile` của Python. Finder, Windows Explorer và app Tệp trên iPhone đọc cờ này đúng.
+
+## `document.execCommand("copy")` cần thao tác thật của người dùng
+Gọi `.click()` bằng script thì cách copy dự phòng trả `false`. Trong `scripts/ui-check.mjs` phải bấm bằng chuột qua CDP (`Input.dispatchMouseEvent`) mới kiểm được.
+
+## Mediabunny 1.66: vài điều dễ vấp
+- `CanvasSink` nếu truyền cả `width` và `height` thì bắt buộc có `fit` (vd `"fill"`), không thì ném lỗi.
+- Trong Web Worker không có `AudioBuffer`, nên phải dùng `AudioSampleSink`/`AudioSampleSource` với `AudioSample` (định dạng `f32-planar`), không dùng `AudioBufferSink`/`AudioBufferSource`.
+- `Request` của Node không tạo được `mode: "navigate"`; test service worker phải gắn thuộc tính đó sau khi tạo.
+
+## Clip Flow thật dài 10 giây, 24fps
+Spec giả định 8 giây. Giới hạn 60 giây của timeline nghĩa là tối đa 6 clip nguyên vẹn.

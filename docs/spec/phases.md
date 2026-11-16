@@ -18,7 +18,7 @@
 - ✅ Cài được lên màn hình chính iPhone/Android; object cũ hơn 7 ngày biến mất khỏi list.
 
 **Phase 5: Hậu kỳ lõi, ghép & xuất (1–2 buổi)**
-- Route `#/p/{id}/edit`, nhập nhiều clip/ảnh, timeline kéo-thả, trim, fit mode; render worker (Mediabunny + WebCodecs + OffscreenCanvas), audio passthrough, xuất MP4 1080x1920; watermark từ brand kit; tải về/chia sẻ.
+- Route `#/p/{id}/edit`, nhập nhiều clip/ảnh, timeline kéo-thả, trim, fit mode; render worker (Mediabunny + WebCodecs + OffscreenCanvas), audio passthrough, xuất MP4 1080x1920; watermark từ brand kit; tải về/chia sẻ. Lưu thành phẩm lên kho (`final.mp4`) và hiện trên trang sản phẩm (chuyển từ phase 8 lên, vì dựng trên laptop và đăng bằng điện thoại); brand kit tối thiểu (@kênh, logo, vị trí watermark).
 - ✅ Ghép 3 clip Flow 8s + 1 ảnh sản phẩm → MP4 1080x1920 ~26s phát được trên iPhone và upload được lên TikTok; tiếng không lệch hình.
 
 **Phase 6: Overlay & ảnh bìa (1 buổi)**

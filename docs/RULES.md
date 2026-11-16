@@ -3,7 +3,7 @@
 Luật cứng. Muốn phá một luật thì phải hỏi chủ dự án trước.
 
 1. **Spec đổi trước, code đổi sau.** Đổi hành vi phải qua `/spec change`. (Để spec luôn là nguồn sự thật.)
-2. **Không build step, không framework, không thư viện runtime.** (Deploy chỉ là copy thư mục `public/`; `wrangler` là devDependency duy nhất.)
+2. **Không build step, không framework.** Thư viện bên thứ ba chỉ được dùng trong `public/editor/`, phải tự host trong `public/editor/vendor/`, ghim phiên bản, và ghi tên, phiên bản, giấy phép vào `public/editor/vendor/README.md`. Cấm lõi GPL. (Deploy chỉ là copy thư mục `public/`; Hậu kỳ cần Mediabunny, Konva, WebSR.)
 3. **Chỉ lưu trên R2.** Không KV, không D1. (Một kho, một rule xoá 7 ngày.)
 4. **UI và thông báo cho người dùng bằng tiếng Việt.**
 5. **Không để key LLM/Groq ở client.** Chỉ `APP_TOKEN` nằm trong `localStorage`. (Key chỉ ở secret của Pages.)

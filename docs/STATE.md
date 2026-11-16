@@ -1,10 +1,46 @@
 # Trạng thái
 
-**Phase hiện tại:** 1 · Nền tảng & đồng bộ — code xong, chờ chủ dự án kiểm trên thiết bị thật
-**Kế hoạch:** docs/superpowers/plans/2026-11-16-khung-spec-va-phase-1.md
-**Việc kế tiếp:** (1) chủ dự án deploy và kiểm phase 1 theo các bước bên dưới; (2) chủ dự án duyệt kế hoạch phase 2 ở `docs/superpowers/plans/2026-11-16-phase-2-thu-vien-mau.md`, rồi `/spec next` để bắt đầu Task 1 của phase 2
+**Phase hiện tại:** 5 · Hậu kỳ lõi (ghép, xuất, lưu lên kho) — code xong, chờ chủ dự án kiểm trên thiết bị thật. Studio (phase 1–4) cũng đang chờ kiểm
+**Thiết kế:** docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
+**Việc kế tiếp:** (1) chủ dự án kiểm phase 5 theo mục "Nghiệm thu gần nhất"; (2) `/spec next` để lập kế hoạch phase 6 (chữ hook, sticker giá, CTA, vùng an toàn, ảnh bìa)
 
-## Checklist phase 1
+## Checklist phase 5
+- [x] Sửa luật 2; `example-input/` vào `.gitignore`; chép ba chỗ lệch spec vào `docs/spec/`
+- [x] Bản thử kỹ thuật với clip thật (làm trong thư mục nháp, không nằm trong repo)
+- [x] `timeline.js`, `audio.js`, `compose.js` (logic thuần + test)
+- [x] `render-worker.js`: xuất MP4 H.264 1080x1920, tiếng AAC mã hoá lại
+- [x] Editor `#/p/{id}/edit`: nhập clip/ảnh, kéo-thả và nút lên/xuống, cắt, tắt tiếng, kiểu vừa khung, xem trước, xuất có tiến độ và Huỷ
+- [x] Clip giữ trên thiết bị (IndexedDB), tải lại trang còn nguyên
+- [x] Brand kit tối thiểu ở trang cài đặt + watermark
+- [x] `PUT /api/products/:id/upload/final.mp4`, `hasFinal`, video thành phẩm trên trang sản phẩm
+- [x] Nghiệm thu phần kiểm được trên máy dev
+- [ ] Chủ dự án kiểm trên Android và iPhone (xem được, tải được, chia sẻ được; thử dựng trên điện thoại)
+
+## Checklist phase 4
+- [x] `manifest.webmanifest` + icon 192/512/maskable/apple-touch (vẽ bằng `scripts/make-icons.mjs`)
+- [x] `public/sw.js`: network-first cho app shell, không cache `/api/*` và `/media/*`
+- [x] Hướng dẫn "Thêm vào Màn hình chính" ở trang cài đặt
+- [x] Extension 0.2.0: gửi xong mở thẳng trang sản phẩm trong app, báo lỗi rõ hơn
+- [x] `README.md`: chạy trên máy, deploy, lifecycle 7 ngày, cấu hình, xử lý trục trặc
+- [x] Nghiệm thu phần kiểm được trên máy dev
+
+## Checklist phase 3
+- [x] Gọi Gemini qua endpoint OpenAI-compatible, xử lý 429/lỗi mạng/JSON hỏng → rơi về gói dựng sẵn kèm lý do
+- [x] `normalize()`: thiếu gì lấy từ mẫu, bỏ từ khẳng định điều trị, nối NEGATIVE, cảnh báo giá lạ
+- [x] Chế độ thủ công: `GET /api/products/:id/generate` (prompt) + `PUT /api/products/:id/package` `{raw}`
+- [x] Tự lưu caption/hashtag/bình luận ghim (debounce 600ms) qua `PUT package`
+- [x] Nghiệm thu phần kiểm được trên máy dev
+
+## Checklist phase 2
+- [x] Task 1: `public/lib/prompt-library.js` (7 mẫu Flow)
+- [x] Task 2: `lib/generate.js` (gói dựng sẵn)
+- [x] Task 3: `savePackage` + `POST /api/products/:id/generate`
+- [x] Task 4: `zip.js` + `package-text.js`
+- [x] Task 5: `share.js`
+- [x] Task 6: UI gói đăng bài
+- [x] Task 7: Nghiệm thu phase 2 (phần kiểm được trên máy dev)
+
+## Checklist phase 1 (kế hoạch: docs/superpowers/plans/2026-11-16-khung-spec-va-phase-1.md)
 - [x] Task 1: Khung spec-driven
 - [x] Task 2: Khung dự án + lib/util.js
 - [x] Task 3: lib/store.js
@@ -17,6 +53,84 @@
 (chưa có)
 
 ## Nghiệm thu gần nhất
+
+**2026-11-16 · Phase 5 · trên máy dev**
+
+Đã chạy và đạt:
+- `npm test`: 175/175.
+- `node scripts/ui-check.mjs`: 83/83. Phần Hậu kỳ chạy trọn trong Chrome thật: tạo 2 clip thử (đỏ 2s, xanh 3s, có tiếng bíp), nhập, thêm ảnh sản phẩm từ kho, đổi thứ tự, cắt, xem trước có watermark, xuất, rồi **đọc lại file xuất**: MP4 H.264 1080x1920, đúng 144 frame, dài 6,000s; tiếng AAC 48kHz dài 6,036s; giây 1 là clip đỏ, giây 5 là clip xanh; hai clip có tiếng, đoạn ảnh tĩnh im lặng. Sau đó lưu lên kho, tải lại trang (3 đoạn còn nguyên), và trang sản phẩm phát được video 1080x1920 từ `/media`.
+- Chạy riêng với **clip Flow thật** trong `example-input/` (720x1280, 24fps, 10s): ghép 2 đoạn của clip với 1 ảnh tĩnh ra 8,5s, 204 frame, mất 1,9s trên máy này. So với nguồn: độ to tiếng và màu điểm ảnh khớp; đoạn tắt tiếng và đoạn ảnh im lặng hoàn toàn.
+
+Tiêu chí ✅ của phase 5 ("Ghép 3 clip Flow 8s + 1 ảnh sản phẩm → MP4 1080x1920 ~26s phát được trên iPhone và upload được lên TikTok; tiếng không lệch hình"):
+- Ghép, kích thước, số frame, độ dài tiếng: **đạt trên máy dev** (với clip thử và 1 clip thật; chưa thử đúng 3 clip thật khác nhau vì thư mục mẫu chỉ có 1 clip).
+- "Phát được trên iPhone", "upload được lên TikTok", "tiếng không lệch hình khi nghe": **chờ chủ dự án kiểm**.
+
+**Chờ chủ dự án kiểm (phase 5):**
+1. Trên laptop (Chrome): `npm run dev`, mở một sản phẩm, bấm "🎬 Dựng video", thả 3 clip Flow thật và 1 ảnh, bấm "Xuất video". Xem video kết quả: nghe tiếng có khớp miệng/hành động không, nhất là ở clip cuối.
+2. Bấm "Lưu lên kho". Sau khi deploy, mở trang sản phẩm trên iPhone và Android: video phát được, tua được, nút "⬇ Tải" và "↗ Chia sẻ" đưa được sang TikTok.
+3. Tải video về điện thoại và đăng thử lên TikTok (để ở chế độ riêng tư).
+4. Thử mở "Dựng video" ngay trên điện thoại. Nếu thấy dòng "Thiết bị này chưa xuất được video" thì đúng thiết kế; nếu không thấy thì thử xuất và báo lại kết quả (chạy được không, mất bao lâu).
+5. Vào ⚙ → Brand kit: nhập @kênh, chọn logo, lưu; dựng lại và xem watermark.
+
+**2026-11-16 · Phase 4 · trên máy dev**
+
+Đã chạy và đạt:
+- `npm test`: 143/143 (thêm `sw.test.js`: lưu sẵn app shell, ưu tiên mạng, mất mạng dùng bản đã lưu, không đụng `/api` và `/media`, không lưu response lỗi, dọn cache cũ; `extension.test.js`: chỉ mở URL cùng origin với endpoint).
+- `node scripts/ui-check.mjs`: 65/65 (thêm: manifest và 4 icon tải được đúng kích thước, service worker hoạt động, cache không có `/api` hay `/media`, trang cài đặt có hướng dẫn cài app).
+
+Tiêu chí ✅ của phase 4:
+- "Cài được lên màn hình chính iPhone/Android": **chờ chủ dự án kiểm** (cần deploy lên HTTPS và thiết bị thật).
+- "Object cũ hơn 7 ngày biến mất khỏi list": **đạt ở tầng app** (`store.test.js` "mục quá hạn bị ẩn…", `api.test.js` "GET :id … quá hạn → 404"). Rule lifecycle của R2 thì chủ dự án chạy lệnh trong README.
+
+**Chưa kiểm được trên máy dev:**
+- Extension chạy thật trong Chrome (mới kiểm phần logic bằng test và cú pháp).
+- Mở app khi mất mạng trên điện thoại thật.
+
+**Chờ chủ dự án kiểm (phase 4):**
+1. Deploy theo `README.md`, chạy hai lệnh lifecycle.
+2. Tải lại extension (bản 0.2.0), gửi một sản phẩm: tab trang sản phẩm trong app phải tự mở.
+3. iPhone (Safari) và Android (Chrome): thêm vào màn hình chính, mở từ icon, nhập token, thấy danh sách.
+4. Bật chế độ máy bay rồi mở app: vẫn hiện khung app và thông báo "Không kết nối được máy chủ".
+
+**2026-11-16 · Phase 3 · trên máy dev**
+
+Đã chạy và đạt:
+- `npm test`: 132/132.
+- `node scripts/ui-check.mjs`: 60/60 (thêm: sửa caption → tự lưu → tải lại trang vẫn còn; copy prompt thủ công; dán nội dung không có JSON → báo lỗi; dán JSON từ chat → gói đổi theo, đủ 6 hook).
+
+Tiêu chí ✅ của phase 3 ("Với sản phẩm Cocoon mẫu: 6 hook đúng 6 công thức, không có từ 'trị', giá đúng 217K"):
+- **Đạt với câu trả lời AI giả lập** (`generate.test.js` "normalize (tiêu chí phase 3)…", "generatePackage: LLM trả tốt…"): câu trả lời cố ý lộn thứ tự hook và có "trị mụn", "chữa", "100%" vẫn ra đúng 6 công thức, không còn chữ "trị", giữ 217K.
+- **Chưa gọi Gemini thật lần nào** vì máy dev không có `LLM_API_KEY`. Chờ chủ dự án kiểm.
+
+**Chờ chủ dự án kiểm (phase 3):**
+1. Lấy key ở Google AI Studio, thêm `LLM_API_KEY=...` vào `.dev.vars` (local) hoặc `wrangler pages secret put LLM_API_KEY` (deploy).
+2. Mở sản phẩm Cocoon, bấm "Tạo lại". Dòng nguồn phải ghi "Tạo bằng AI (gemini-3.8-flash)". Nếu ghi "Không gọi được AI (http 404)" thì tên model đã đổi: sửa `LLM_MODEL` trong `wrangler.toml`.
+3. Đọc 6 hook: đúng 6 công thức, không có chữ "trị", giá 217K.
+4. Chế độ thủ công: bấm "Copy prompt…", dán vào claude.ai, copy câu trả lời, dán vào ô, bấm "Dùng kết quả này".
+
+**2026-11-16 · Phase 2 · trên máy dev**
+
+Đã chạy và đạt:
+- `npm test`: 110/110.
+- `node scripts/ui-check.mjs`: 55/55 trên Chrome headless (375px và 1280px), chạy với `wrangler pages dev` thật: mở trang là tự có gói; 6 hook đúng thứ tự; copy lời hook, chữ ảnh bìa, prompt, caption + hashtag, cả gói (đọc lại clipboard để so); tab Thư viện mẫu 4/7 prompt; zip tải về mở được và có đủ file; Tạo lại hỏi xác nhận khi đã sửa; bấm hai lần chỉ một request; Clipboard API hỏng vẫn copy được.
+
+Tiêu chí ✅ của phase 2:
+- "Không cần LLM vẫn ra đủ gói": **đạt** (gói `source: "template"`, không gọi dịch vụ ngoài).
+- "Copy caption+hashtag 1 chạm": **đạt** (nút ở thanh dính đáy).
+- "Zip mở được trên Windows/iPhone": **chờ chủ dự án kiểm**. Trên máy dev zip mở được bằng `zipfile` của Python và có cờ tên UTF-8.
+
+Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
+1. Sản phẩm thiếu dữ liệu → `generate.test.js` "sản phẩm thiếu dữ liệu…", "có giá nhưng không có % giảm".
+2. Từ khẳng định điều trị → `generate.test.js` "tiêu đề có từ cấm…", "thực phẩm/sức khoẻ…".
+3. Tên file có dấu trong zip → `zip.test.js` "zip mở được…", "cờ UTF-8…".
+4. Không có Clipboard API / Web Share → ui-check "Clipboard API hỏng…"; nút Chia sẻ tự ẩn khi `canShareFiles()` sai (chưa có kiểm tra tự động cho trường hợp ẩn).
+5. Tạo lại khi đã sửa, bấm hai lần → ui-check "Tạo lại khi đã sửa…", "bấm Tạo lại hai lần…".
+
+**Chờ chủ dự án kiểm (phase 2):**
+1. Trên điện thoại: mở một sản phẩm, bấm "Copy caption + hashtag", dán vào TikTok.
+2. Bấm "⬇ Tải tất cả .zip", mở file trong app Tệp (iPhone) và trên Windows: tên `goi-dang-bai.txt` và nội dung tiếng Việt đúng dấu.
+3. Bấm "↗ Chia sẻ" ở video và một ảnh: bảng chia sẻ hiện ra và gửi được sang TikTok.
+4. Copy một prompt, dán vào Google Flow cùng Ảnh 1, xem clip ra có đúng sản phẩm không; nếu câu chữ mẫu cần chỉnh thì báo lại.
 
 **2026-11-16 · Phase 1 · trên máy dev**
 
@@ -38,6 +152,22 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 3. Mở app trên iPhone, nhập token, mở sản phẩm: ảnh hiện, video phát và tua được, tải thử một ảnh.
 4. Xem dòng ghi chú trong khối "Ảnh & video". Nếu có "N file chưa lưu được về kho" tức CDN thật từ chối server: báo lại để ghi vào `docs/memory/gotchas.md` và xử lý.
 
+## Tồn đọng nhỏ từ phase 5 (chưa sửa)
+- Chưa có bước làm nét sau khi phóng 720p lên 1080p (spec mục 9.7 chế độ "Chuẩn"); hiện chỉ dùng nội suy chất lượng cao của canvas. Để dành cho phase 8.5 cùng Enhance AI.
+- Xem trước dùng thẻ `<video>` nên có thể khựng nhẹ ở chỗ chuyển đoạn; bản xuất không bị.
+- Chưa kiểm tự động: nút Huỷ khi đang xuất, kéo-thả đổi thứ tự bằng chuột (nút lên/xuống thì đã kiểm), chọn lại file cho đoạn thiếu clip.
+- Giới hạn tải lên là 70MB (spec ghi 95MB) vì server phải đọc cả file vào RAM để kiểm chữ ký MP4.
+- Trang dựng video chưa được thiết kế cho màn hình cảm ứng nhỏ (đúng thiết kế: dựng trên điện thoại là phụ).
+- Chưa có review độc lập cho code phase 2–5.
+
+## Tồn đọng nhỏ từ phase 3 (chưa sửa)
+- Trường `persona` trong body generate (spec mục 5) chưa dùng.
+- Hậu kiểm giá chỉ bắt dạng "199K"; giá viết kiểu "199.000đ" hoặc "199 nghìn" chưa bắt.
+
+## Tồn đọng nhỏ từ phase 2 (chưa sửa)
+- Tab "Thư viện mẫu" dựng prompt từ tiêu đề gốc trong trình duyệt, nên từ khẳng định công dụng trong tiêu đề (vd "đặc trị") chưa bị lọc ở tên sản phẩm trong prompt; tab "Đề xuất" thì đã lọc.
+- Tone chỉ có tác dụng khi tạo bằng AI hoặc chế độ thủ công; gói dựng sẵn có một giọng.
+
 ## Tồn đọng nhỏ từ review phase 1 (chưa sửa, chủ dự án quyết có làm không)
 - `lib/store.js`: giới hạn metadata chỉ mục đếm theo ký tự chứ chưa theo byte; `price.current` không phải số có thể làm POST lỗi 500 sau khi đã ghi file (sản phẩm mồ côi tới khi lifecycle xoá).
 - `lib/mirror.js`: `url` sản phẩm chứa ký tự có dấu làm header Referer lỗi, mọi file thành "chưa lưu"; 12 ảnh tải song song có thể tốn nhiều RAM; ảnh thứ 13 trở đi bị bỏ hẳn khỏi sản phẩm.
@@ -49,7 +179,7 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 - `scripts/ui-check.mjs` viết cứng đường dẫn Chrome trên macOS.
 
 ## Các phase sau
-- [ ] Phase 2: Thư viện mẫu & gói dựng sẵn
-- [ ] Phase 3: LLM + chế độ thủ công
-- [ ] Phase 4: PWA, lifecycle, extension, deploy
-- [ ] Hậu kỳ (phase 5–8.5): cần buổi thiết kế riêng trước
+- [ ] Phase 6: Overlay & ảnh bìa
+- [ ] Phase 7: Phụ đề tự động
+- [ ] Phase 8: Đồng bộ `edit.json` & dựng hàng loạt (cần làm rõ lại phần batch với chủ dự án)
+- [ ] Phase 8.5: Enhance AI

@@ -17,9 +17,10 @@ export async function api(path, { method = "GET", body } = {}) {
       method,
       headers: {
         Authorization: `Bearer ${getToken()}`,
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(body === undefined ? {} : { "Content-Type": body instanceof Blob ? body.type || "application/octet-stream" : "application/json" }),
       },
-      body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
+      // Blob (video thành phẩm) gửi nguyên dạng nhị phân; còn lại gửi JSON.
+      body: body === undefined ? undefined : body instanceof Blob || typeof body === "string" ? body : JSON.stringify(body),
     });
   } catch {
     throw new Error("Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.");

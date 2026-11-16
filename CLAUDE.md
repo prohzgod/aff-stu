@@ -27,8 +27,8 @@ Làm việc qua skill `spec`: `/spec status`, `/spec next`, `/spec change <mô t
 
 - `functions/` — Pages Functions, lớp mỏng gọi sang `lib/`
 - `lib/` — logic phía server, nhận `bucket` và `fetch` qua tham số để test được
-- `public/` — app tĩnh; `public/lib/` là logic thuần phía client
-- `test/` — test và `helpers/fake-bucket.js` (R2 giả)
+- `public/` — app tĩnh; `public/lib/` là logic thuần phía client, `public/views/` là các khối giao diện lớn
+- `test/` — test và `helpers/` (R2 giả, fetch giả); `scripts/` — kiểm giao diện, vẽ icon
 - `product-grabber/` — Chrome extension gửi sản phẩm sang app
 
 @docs/RULES.md

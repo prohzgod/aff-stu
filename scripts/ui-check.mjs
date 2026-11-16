@@ -1,7 +1,8 @@
-// Kiểm UI phase 1 bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
+// Kiểm UI (phase 1–5) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
 // Chạy: node scripts/ui-check.mjs [thư mục lưu ảnh chụp]
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,6 +49,12 @@ const results = [];
 const check = (name, ok, extra = "") => { results.push(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}`); };
 
 await send("Page.enable"); await send("Runtime.enable");
+const downloadDir = mkdtempSync(join(tmpdir(), "ui-dl-"));
+await send("Browser.grantPermissions", { origin: B, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] });
+await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloadDir });
+await send("Emulation.setFocusEmulationEnabled", { enabled: true });
+const clipboard = () => ev("navigator.clipboard.readText()");
+const toastText = () => ev("document.querySelector('#toast').hidden ? '' : document.querySelector('#toast').textContent");
 await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
 const noOverflow = () => ev("document.documentElement.scrollWidth <= window.innerWidth");
 
@@ -56,6 +63,23 @@ try {
   await send("Page.navigate", { url: B + "/" });
   await waitFor("location.hash === '#/settings' && !!document.querySelector('#token')", "settings");
   check("chưa có token → chuyển tới #/settings", true);
+
+  // ----- phase 4: PWA -----
+  check("trang cài đặt có hướng dẫn thêm vào màn hình chính (iPhone và Android)", await ev("(() => { const t = document.querySelector('.install-guide')?.textContent || ''; return t.includes('Thêm vào Màn hình chính') && t.includes('iPhone') && t.includes('Android'); })()"));
+  check("có manifest, theme-color, apple-touch-icon", await ev("!!document.querySelector('link[rel=\"manifest\"][href=\"/manifest.webmanifest\"]') && !!document.querySelector('meta[name=\"theme-color\"]') && !!document.querySelector('link[rel=\"apple-touch-icon\"]')"));
+  const icons = await ev(`(async () => {
+    const m = await (await fetch("/manifest.webmanifest")).json();
+    const out = [];
+    for (const icon of [...m.icons, { src: document.querySelector('link[rel="apple-touch-icon"]').getAttribute("href"), sizes: "180x180" }]) {
+      const img = new Image();
+      const ok = await new Promise((r) => { img.onload = () => r(true); img.onerror = () => r(false); img.src = icon.src; });
+      out.push(ok && img.naturalWidth + "x" + img.naturalHeight === icon.sizes);
+    }
+    return { ok: out.every(Boolean), n: out.length, display: m.display, start: m.start_url, lang: m.lang, purposes: m.icons.map((i) => i.purpose).join() };
+  })()`);
+  check("manifest: standalone, start_url /, icon 192 + 512 + maskable tải được đúng kích thước", icons.ok && icons.n === 4 && icons.display === "standalone" && icons.start === "/" && icons.purposes === "any,any,maskable", JSON.stringify(icons));
+  const swState = await ev("navigator.serviceWorker.ready.then((r) => r.active.scriptURL)");
+  check("service worker đã đăng ký và hoạt động", swState.endsWith("/sw.js"), swState);
   await ev("document.querySelector('form').requestSubmit()");
   check("lưu token rỗng → báo lỗi, không rời trang", await ev("!document.querySelector('.field-error').hidden && location.hash === '#/settings'"));
 
@@ -88,7 +112,7 @@ try {
   check("shop · đã bán · ★", (await ev("document.querySelector('.card p.muted').textContent")) === "<b>Cocoon</b> · 229.096 đã bán · ★ 4.7 (321)");
   check("link sàn mở tab mới, có noopener", await ev("(() => { const a = [...document.querySelectorAll('a')].find(a => a.textContent.includes('Xem trên sàn')); return a.href === 'https://shop.tiktok.com/vn/pdp/1736191557601166757' && a.target === '_blank' && a.rel.includes('noopener'); })()"));
   check("'Tự xoá sau 7 ngày'", await ev("[...document.querySelectorAll('.badge')].some(b => b.textContent === 'Tự xoá sau 7 ngày')"));
-  check("3 ảnh có nhãn Ảnh 1..3", await ev("[...document.querySelectorAll('.media-grid figcaption span')].map(s => s.textContent).join() === 'Ảnh 1,Ảnh 2,Ảnh 3'"));
+  check("3 ảnh có nhãn Ảnh 1..3", await ev("[...document.querySelectorAll('.media-grid figcaption > span:first-child')].map(s => s.textContent).join() === 'Ảnh 1,Ảnh 2,Ảnh 3'"));
   check("ảnh 1 đã lưu: src /media/, nút Tải có download", await ev(`(() => { const f = document.querySelector('.media-grid figure'); const a = f.querySelector('a'); return f.querySelector('img').getAttribute('src') === '/media/p/${id}/img_01.png' && a.hasAttribute('download') && a.getAttribute('download') === '${id}_img_01.png'; })()`));
   check("ảnh 2 chưa lưu: nút Mở link gốc ở tab mới", await ev("(() => { const a = document.querySelectorAll('.media-grid figure')[1].querySelector('a'); return a.href.startsWith('https://cdn.example.test/') && a.target === '_blank' && !a.hasAttribute('download'); })()"));
   await waitFor("document.querySelectorAll('.media-grid figure')[1].querySelector('.noimg')?.textContent === 'Không tải được ảnh'", "ô thay ảnh vỡ");
@@ -98,12 +122,187 @@ try {
   await waitFor("document.querySelector('.media-grid img').complete && document.querySelector('.media-grid img').naturalWidth > 0", "ảnh thật tải xong");
   check("ảnh đã lưu hiển thị được từ /media", true);
   check("chi tiết: không cuộn ngang ở 375px", await noOverflow());
+
+  // ----- phase 2: gói đăng bài -----
+  await waitFor("document.querySelectorAll('.hook').length === 6", "6 hook (gói tự tạo khi mở trang)");
+  check("mở trang lần đầu → tự tạo gói, đủ 6 hook đúng thứ tự công thức", (await ev("[...document.querySelectorAll('.hook .chip')].map(c => c.textContent).join('|')")) === "Nỗi đau|Giá sốc|Bằng chứng xã hội|Tò mò|So sánh|Trải nghiệm thật");
+  check("nội dung gói chứa HTML từ tiêu đề vẫn hiện dạng chữ", await ev("document.querySelectorAll('#app script, #app b, .hook img').length === 0"));
+  await ev("document.querySelector('.hook [data-copy=\"spoken\"]').click()");
+  await waitFor("document.querySelector('#toast').textContent === 'Đã copy' && !document.querySelector('#toast').hidden", "toast copy hook");
+  check("copy lời hook → clipboard đúng", (await clipboard()) === (await ev("document.querySelector('.hook .hook-spoken').textContent")));
+  await ev("document.querySelector('.cover-chip').click()");
+  check("bấm chip chữ ảnh bìa → copy đúng chữ", (await clipboard()) === (await ev("document.querySelector('.cover-chip').textContent")));
+  check("tab Đề xuất có 4 prompt (faceless)", await ev("document.querySelectorAll('[data-panel=\"suggested\"] .prompt').length === 4"));
+  await ev("document.querySelector('[data-tab=\"library\"]').click()");
+  check("tab Thư viện mẫu: faceless bật có 4 prompt", await ev("!document.querySelector('[data-panel=\"library\"]').hidden && document.querySelector('[data-panel=\"suggested\"]').hidden && document.querySelectorAll('[data-panel=\"library\"] .prompt').length === 4"));
+  await ev("(() => { const c = document.querySelector('#lib-faceless'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  check("tắt faceless → 7 prompt", await ev("document.querySelectorAll('[data-panel=\"library\"] .prompt').length === 7"));
+  await ev("(() => { const i = document.querySelector('#lib-surface'); i.value = 'a pink marble table'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  check("sửa bề mặt → prompt đổi theo", await ev("[...document.querySelectorAll('[data-panel=\"library\"] .prompt-text')].some(p => p.textContent.includes('a pink marble table'))"));
+  await ev("document.querySelector('[data-panel=\"library\"] .prompt [data-copy=\"prompt\"]').click()");
+  check("copy prompt → clipboard bắt đầu bằng 'Vertical 9:16'", (await clipboard()).startsWith("Vertical 9:16"));
+  check("kịch bản có 4 nhịp", await ev("document.querySelectorAll('.beat:not(.beat-head)').length === 4"));
+  check("có khối Lưu ý (thiếu gì thì báo)", await ev("document.querySelectorAll('.warnings li').length >= 1"));
+  await ev("(() => { const t = document.querySelector('#pkg-caption'); t.value = 'Caption đã sửa'; t.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  await ev("document.querySelector('[data-action=\"copy-caption\"]').click()");
+  await sleep(200);
+  check("Copy caption + hashtag dùng nội dung đã sửa", (await clipboard()) === "Caption đã sửa\n\n" + (await ev("document.querySelector('#pkg-hashtags').value.trim().split(/\\s+/).join(' ')")));
+  await ev("document.querySelector('[data-action=\"copy-all\"]').click()");
+  await sleep(200);
+  const all = await clipboard();
+  check("Copy cả gói: đủ phần và có caption đã sửa", all.includes("== HOOK ==") && all.includes("== PROMPT GOOGLE FLOW ==") && all.includes("Caption đã sửa"));
+  // ----- phase 3: tự lưu -----
+  await waitFor("document.querySelector('.save-status')?.textContent === 'Đã lưu'", "tự lưu caption");
+  await send("Page.reload");
+  await waitFor("document.querySelector('#pkg-caption')?.value === 'Caption đã sửa'", "caption còn nguyên sau khi tải lại trang");
+  check("sửa caption → tự lưu, tải lại trang vẫn còn", true);
+  check("tải lại trang không tạo gói mới (vẫn 6 hook, không gọi generate)", await ev("document.querySelectorAll('.hook').length === 6"));
+
+  check("thanh dính đáy không che nội dung cuối trang", await ev("(() => { window.scrollTo(0, document.body.scrollHeight); const last = document.querySelector('#app').lastElementChild.previousElementSibling ?? document.querySelector('#app').lastElementChild; const bar = document.querySelector('.pkgbar').getBoundingClientRect(); const secs = [...document.querySelectorAll('#app section')]; return secs[secs.length - 1].getBoundingClientRect().bottom <= bar.top + 1; })()"));
+  check("chi tiết có gói: không cuộn ngang ở 375px", await noOverflow());
   await shot("2-detail.png");
+
+  // zip
+  await ev("document.querySelector('[data-action=\"zip\"]').click()");
+  let zipName;
+  for (let i = 0; i < 80 && !zipName; i++) { await sleep(150); zipName = readdirSync(downloadDir).find((f) => f.endsWith(".zip")); }
+  check("Tải tất cả .zip → có file tải về", !!zipName, zipName || "");
+  if (zipName) {
+    const names = JSON.parse(execFileSync("python3", ["-c", "import json,sys,zipfile\nz=zipfile.ZipFile(sys.argv[1])\nassert z.testzip() is None\nprint(json.dumps(z.namelist()))", join(downloadDir, zipName)], { encoding: "utf8" }));
+    check("zip hợp lệ, có ảnh đã lưu + goi-dang-bai.txt + product.json", names.includes("goi-dang-bai.txt") && names.includes("product.json") && names.some((n) => /^img_01\./.test(n)), names.join(", "));
+    const txt = execFileSync("python3", ["-c", "import sys,zipfile\nsys.stdout.buffer.write(zipfile.ZipFile(sys.argv[1]).read('goi-dang-bai.txt'))", join(downloadDir, zipName)], { encoding: "utf8" });
+    check("goi-dang-bai.txt trong zip chứa caption đã sửa", txt.includes("Caption đã sửa"));
+    check("tên zip theo mẫu {slug}_{yyyymmdd}.zip", /^[a-z0-9-]+_\d{8}\.zip$/.test(zipName), zipName);
+  }
+  check("zip báo số file bị bỏ qua vì chưa lưu về kho", (await toastText()).includes("bỏ qua 3"), await toastText());
+
+  // tạo lại khi đã sửa
+  const before = dialogs.length;
+  await ev("document.querySelector('[data-action=\"generate\"]').click()");
+  await waitFor("document.querySelector('#pkg-caption').value !== 'Caption đã sửa'", "tạo lại xong");
+  check("Tạo lại khi đã sửa → hỏi xác nhận trước", dialogs.length === before + 1 && dialogs[before].startsWith("Tạo lại sẽ thay"), JSON.stringify(dialogs.slice(before)));
+  check("tạo lại xong vẫn đủ 6 hook, không nhân đôi khối", await ev("document.querySelectorAll('.hook').length === 6 && document.querySelectorAll('.pkgbar').length === 1"));
+
+  // ----- phase 3: chế độ thủ công -----
+  await ev("document.querySelector('details.manual').open = true");
+  await ev("document.querySelector('[data-action=\"copy-manual-prompt\"]').click()");
+  await waitFor("document.querySelector('#toast').textContent === 'Đã copy prompt' && !document.querySelector('#toast').hidden", "copy prompt thủ công");
+  const manualPrompt = await clipboard();
+  check("Copy prompt cho chat AI: có luật, schema và yêu cầu chỉ trả JSON", manualPrompt.includes('"hooks"') && manualPrompt.includes("Chỉ trả về đúng một khối JSON") && manualPrompt.includes("Dữ liệu sản phẩm"));
+  await ev("(() => { const t = document.querySelector('#manual-raw'); t.value = 'xin lỗi, không có json'; t.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('[data-action=\"apply-manual\"]').click(); })()");
+  await waitFor("!document.querySelector('.manual .field-error').hidden", "lỗi dán sai");
+  check("dán nội dung không có JSON → báo lỗi tại chỗ, gói cũ còn nguyên", await ev("document.querySelector('.manual .field-error').textContent.includes('Không đọc được JSON') && document.querySelectorAll('.hook').length === 6"));
+  const pasted = "Của bạn đây:\n```json\n" + JSON.stringify({ caption: "Caption từ chat. Bấm giỏ hàng vàng nha!", hooks: [{ formula: "Tò mò", spoken: "Món này có gì mà ai cũng hỏi?", onScreen: "Có gì hot?" }] }) + "\n```";
+  await ev(`(() => { const t = document.querySelector('#manual-raw'); t.value = ${JSON.stringify(pasted)}; t.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('[data-action="apply-manual"]').click(); })()`);
+  await waitFor("document.querySelector('#pkg-caption')?.value === 'Caption từ chat. Bấm giỏ hàng vàng nha!'", "áp dụng JSON đã dán");
+  check("dán JSON từ chat → gói đổi theo, vẫn đủ 6 hook, ghi nguồn thủ công", await ev("document.querySelectorAll('.hook').length === 6 && [...document.querySelectorAll('.hook-spoken')][3].textContent === 'Món này có gì mà ai cũng hỏi?' && document.querySelector('.gen-note').textContent.includes('thủ công')"));
+
+  // bấm Tạo lại hai lần liên tiếp → chỉ một request
+  await ev("(() => { window.__gen = 0; const f = window.fetch; window.fetch = (u, o) => { if (String(u).endsWith('/generate')) window.__gen++; return f(u, o); }; const b = document.querySelector('[data-action=\"generate\"]'); b.click(); b.click(); })()");
+  await waitFor("!document.querySelector('[data-action=\"generate\"]').disabled", "tạo lại lần hai xong");
+  check("bấm Tạo lại hai lần liên tiếp → chỉ một request", (await ev("window.__gen")) === 1);
+
+  // Clipboard API hỏng → vẫn copy được bằng cách cũ, không có lỗi
+  await ev("navigator.clipboard.writeText = () => Promise.reject(new Error('no'))");
+  // execCommand("copy") cần thao tác thật của người dùng, nên bấm bằng chuột qua CDP thay vì .click()
+  const pt = await ev("(() => { const el = document.querySelector('.cover-chip'); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
+  for (const type of ["mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+  await sleep(300);
+  check("Clipboard API hỏng → copy bằng cách cũ vẫn báo 'Đã copy'", (await toastText()) === "Đã copy", await toastText());
+
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await sleep(200);
+  check("chi tiết ở 1280px: không cuộn ngang", await noOverflow());
+  await shot("2-detail-desktop.png");
+  await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
+
+
+  // ----- phase 5: dựng video -----
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  check("trang sản phẩm có nút Dựng video, chưa có video thành phẩm", await ev("document.querySelector('[data-action=\"open-editor\"]')?.textContent.includes('Dựng video') && !document.querySelector('.final-video')"));
+  await ev("fetch('/api/brandkit', { method: 'PUT', headers: { Authorization: 'Bearer ' + localStorage.getItem('APP_TOKEN'), 'Content-Type': 'application/json' }, body: JSON.stringify({ handle: 'kenhthu', position: 'tl', watermark: true, logo: null }) }).then((r) => r.status)");
+  await ev("location.hash = '#/p/" + id + "/edit'");
+  await waitFor("document.querySelector('.editor')?.dataset.ready === '1'", "mở trình dựng video");
+  check("thiết bị này xuất được video (không có thông báo chặn)", await ev("document.querySelector('.editor .field-error').hidden && document.querySelector('[data-action=\"export\"]').disabled"));
+  check("có công tắc watermark khi brand kit có tên kênh", await ev("!document.querySelector('#ed-watermark').closest('label').hidden"));
+  // Tạo hai clip thử ngay trong trình duyệt: khung một màu, tiếng bíp, 720x1280, 24fps.
+  await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    async function make(name, color, secs, freq) {
+      const fps = 24, rate = 48000, c = new OffscreenCanvas(720, 1280), g = c.getContext("2d");
+      const out = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: "in-memory" }), target: new MB.BufferTarget() });
+      const vs = new MB.CanvasSource(c, { codec: "avc", bitrate: 1500000 }), as = new MB.AudioSampleSource({ codec: "aac", bitrate: 96000 });
+      out.addVideoTrack(vs, { frameRate: fps }); out.addAudioTrack(as); await out.start();
+      for (let i = 0; i < secs * fps; i++) { g.fillStyle = color; g.fillRect(0, 0, 720, 1280); await vs.add(i / fps, 1 / fps); }
+      for (let o = 0; o < secs * rate; o += 4800) {
+        const d = new Float32Array(9600);
+        for (let i = 0; i < 4800; i++) d[i] = d[4800 + i] = 0.4 * Math.sin((2 * Math.PI * freq * (o + i)) / rate);
+        const s = new MB.AudioSample({ data: d, format: "f32-planar", numberOfChannels: 2, sampleRate: rate, timestamp: o / rate });
+        await as.add(s); s.close();
+      }
+      await out.finalize();
+      return new File([out.target.buffer], name, { type: "video/mp4" });
+    }
+    const dt = new DataTransfer();
+    dt.items.add(await make("do.mp4", "#ff0000", 2, 440));
+    dt.items.add(await make("xanh.mp4", "#0000ff", 3, 880));
+    const input = document.querySelector("#ed-files");
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelectorAll('.seg').length === 2", "nhập 2 clip");
+  check("nhập 2 clip: đúng tên, thời lượng 2.0s và 3.0s, tổng 5.0s", await ev("[...document.querySelectorAll('.seg-name')].map((n) => n.textContent).join('|') === '1. do.mp4|2. xanh.mp4' && [...document.querySelectorAll('.seg .badge')].map((b) => b.textContent).join() === '2.0s,3.0s' && document.querySelector('.ed-summary').textContent === '2 đoạn · 5.0s'"));
+  await ev("document.querySelector('[data-add]').click()");
+  await waitFor("document.querySelectorAll('.seg').length === 3", "thêm ảnh sản phẩm từ kho");
+  await ev("document.querySelectorAll('.seg')[2].querySelector('[data-move=\"up\"]').click()");
+  check("thêm ảnh sản phẩm rồi chuyển lên giữa", (await ev("[...document.querySelectorAll('.seg-name')].map((n) => n.textContent).join('|')")) === "1. do.mp4|2. Ảnh 1|3. xanh.mp4");
+  await ev("(() => { const i = document.querySelectorAll('.seg')[2].querySelector('[data-field=\"in\"]'); i.value = '1'; i.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  check("cắt đầu clip thứ ba 1 giây → tổng 6.0s", (await ev("document.querySelector('.ed-summary').textContent")) === "3 đoạn · 6.0s");
+  await ev("(() => { const i = document.querySelectorAll('.seg')[2].querySelector('[data-field=\"in\"]'); i.value = '99'; i.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  check("cắt quá tay được kéo về hợp lệ (đoạn còn tối thiểu 0,2s)", (await ev("document.querySelectorAll('.seg .badge')[2].textContent")) === "0.2s");
+  await ev("(() => { const i = document.querySelectorAll('.seg')[2].querySelector('[data-field=\"in\"]'); i.value = '1'; i.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await waitFor("(() => { const c = document.querySelector('.ed-canvas'); const d = c.getContext('2d').getImageData(540, 1200, 1, 1).data; return d[0] > 180 && d[2] < 80; })()", "xem trước hiện frame đầu (đỏ)");
+  check("xem trước hiện frame đầu của clip thứ nhất", true);
+  check("xem trước có watermark @kenhthu ở góc trên-trái", await ev("(() => { const d = document.querySelector('.ed-canvas').getContext('2d').getImageData(44, 130, 260, 60).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 120) n++; return n > 200; })()"));
+  await ev("document.querySelector('[data-action=\"export\"]').click()");
+  await waitFor("!!document.querySelector('.ed-result:not([hidden]) video')", "xuất video");
+  const exported = await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    const blob = await (await fetch(document.querySelector(".ed-result video").src)).blob();
+    const inp = new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) });
+    const v = await inp.getPrimaryVideoTrack(), a = await inp.getPrimaryAudioTrack();
+    const cs = new MB.CanvasSink(v, { width: 108, height: 192, fit: "fill" });
+    const px = async (t) => { const m = (await cs.getCanvas(t)).canvas.getContext("2d").getImageData(54, 150, 1, 1).data; return [m[0], m[1], m[2]]; };
+    const sink = new MB.AudioBufferSink(a);
+    const rms = async (s, e) => { let sum = 0, n = 0; for await (const b of sink.buffers(s, e)) { const d = b.buffer.getChannelData(0); for (let i = 0; i < d.length; i++) { const t = b.timestamp + i / b.buffer.sampleRate; if (t >= s && t < e) { sum += d[i] * d[i]; n++; } } } return Math.sqrt(sum / Math.max(1, n)); };
+    return { w: v.displayWidth, h: v.displayHeight, codec: v.codec, frames: (await v.computePacketStats()).packetCount, vdur: await v.computeDuration(), adur: await a.computeDuration(), acodec: a.codec, rate: a.sampleRate,
+      red: await px(1), blue: await px(5), rmsClip1: await rms(0.3, 1.7), rmsImage: await rms(2.3, 3.7), rmsClip2: await rms(4.3, 5.7), bytes: blob.size, info: document.querySelector(".ed-result-info").textContent };
+  })()`);
+  check("file xuất: MP4 H.264 1080x1920, đúng 144 frame, dài 6 giây", exported.w === 1080 && exported.h === 1920 && exported.codec === "avc" && exported.frames === 144 && Math.abs(exported.vdur - 6) < 0.001, JSON.stringify({ w: exported.w, h: exported.h, frames: exported.frames, vdur: exported.vdur, info: exported.info }));
+  check("tiếng AAC 48kHz dài bằng hình (lệch dưới 0,06s)", exported.acodec === "aac" && exported.rate === 48000 && Math.abs(exported.adur - exported.vdur) < 0.06, `tiếng ${exported.adur}s, hình ${exported.vdur}s`);
+  check("đúng thứ tự hình: giây 1 là clip đỏ, giây 5 là clip xanh", exported.red[0] > 180 && exported.red[2] < 80 && exported.blue[2] > 180 && exported.blue[0] < 80, JSON.stringify([exported.red, exported.blue]));
+  check("đúng tiếng: hai clip có tiếng, đoạn ảnh tĩnh im lặng", exported.rmsClip1 > 0.1 && exported.rmsClip2 > 0.1 && exported.rmsImage < 0.005, JSON.stringify([exported.rmsClip1, exported.rmsImage, exported.rmsClip2].map((v) => +v.toFixed(4))));
+  await ev("document.querySelector('[data-action=\"save-final\"]').click()");
+  await waitFor("document.querySelector('[data-action=\"save-final\"]')?.textContent === 'Đã lưu lên kho ✓'", "lưu video lên kho");
+  check("Lưu lên kho thành công", true);
+  await shot("4-editor.png");
+  await send("Page.reload");
+  await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && document.querySelectorAll('.seg').length === 3", "mở lại trình dựng");
+  check("tải lại trang: 3 đoạn còn nguyên, không đoạn nào thiếu file, điểm cắt được giữ", await ev("!document.querySelector('.seg .field-error') && document.querySelector('.ed-summary').textContent === '3 đoạn · 6.0s' && !document.querySelector('[data-action=\"export\"]').disabled"));
+  await ev("location.hash = '#/p/" + id + "'");
+  await waitFor("!!document.querySelector('.final-video')", "video thành phẩm trên trang sản phẩm");
+  await waitFor("document.querySelector('.final-video').readyState >= 1", "video thành phẩm tải được");
+  check("trang sản phẩm hiện video thành phẩm 1080x1920 từ kho, kèm nút tải", await ev("(() => { const v = document.querySelector('.final-video'); return v.getAttribute('src') === '/media/p/" + id + "/final.mp4' && v.videoWidth === 1080 && v.videoHeight === 1920 && !!document.querySelector('.final a[download]'); })()"));
+  check("rời trình dựng: không còn worker hay thanh nào sót lại, không lỗi JavaScript", consoleErrors.length === 0, consoleErrors.join(" | "));
+  await ev("fetch('/api/brandkit', { method: 'PUT', headers: { Authorization: 'Bearer ' + localStorage.getItem('APP_TOKEN'), 'Content-Type': 'application/json' }, body: JSON.stringify({ handle: '', position: 'tl', watermark: true, logo: null }) }).then((r) => r.status)");
+  await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
+  await sleep(200);
+  check("trang sản phẩm có video thành phẩm: không cuộn ngang ở 375px", await noOverflow());
 
   // 5. danh sách có 1 card
   await ev("location.hash = '#/'");
   await waitFor("!!document.querySelector('.pcard')", "card");
-  check("card: tiêu đề dạng chữ, giá, badge", await ev(`(() => { const c = document.querySelector('.pcard'); return c.querySelector('.pcard-title').textContent === ${JSON.stringify(XSS)} && c.querySelector('.price').textContent === '216.749₫' && c.querySelectorAll('.badge')[0].textContent === 'Chưa tạo gói' && c.querySelectorAll('.badge')[1].textContent === 'còn 7 ngày' && c.querySelector('img').getAttribute('src').startsWith('/media/p/'); })()`));
+  check("card: tiêu đề dạng chữ, giá, badge", await ev(`(() => { const c = document.querySelector('.pcard'); return c.querySelector('.pcard-title').textContent === ${JSON.stringify(XSS)} && c.querySelector('.price').textContent === '216.749₫' && c.querySelectorAll('.badge')[0].textContent === 'Đã có gói' && [...c.querySelectorAll('.badge')].some((b) => b.textContent === 'Có video') && [...c.querySelectorAll('.badge')].some((b) => b.textContent === 'còn 7 ngày') && c.querySelector('img').getAttribute('src').startsWith('/media/p/'); })()`));
   check("danh sách: không cuộn ngang ở 375px", await noOverflow());
   await shot("3-list.png");
 
@@ -112,7 +311,8 @@ try {
   await waitFor("!!document.querySelector('.btn.danger')", "nút xoá");
   await ev("document.querySelector('.btn.danger').click()");
   await waitFor("location.hash === '#/' && !!document.querySelector('.state-title')", "về danh sách sau xoá");
-  check("Xoá: hỏi xác nhận rồi về danh sách rỗng", dialogs.length === 1 && dialogs[0].startsWith("Xoá sản phẩm này"), `hộp thoại: ${JSON.stringify(dialogs)}`);
+  check("Xoá: hỏi xác nhận rồi về danh sách rỗng", dialogs.at(-1)?.startsWith("Xoá sản phẩm này"), `hộp thoại: ${JSON.stringify(dialogs)}`);
+  check("thanh dính đáy biến mất khi rời trang chi tiết", await ev("document.querySelectorAll('.pkgbar').length === 0"));
 
   // 7. sản phẩm không còn
   await ev("location.hash = '#/p/zzzzzzzzzz'");
@@ -125,8 +325,10 @@ try {
   check("token sai → chuyển tới #/settings", true);
   check("token sai → có thông báo lý do", (await ev("document.querySelector('#toast').hidden ? '' : document.querySelector('#toast').textContent")) === "Token không đúng. Nhập lại token.");
 
+  const cached = await ev("(async () => { const out = []; for (const n of await caches.keys()) for (const r of await (await caches.open(n)).keys()) out.push(new URL(r.url).pathname); return out; })()");
+  check("cache của service worker có app shell, không có /api hay /media", cached.includes("/app.js") && cached.includes("/views/package.js") && !cached.some((u) => /^\/(api|media)\//.test(u)), `${cached.length} mục`);
   check("không có lỗi JavaScript", consoleErrors.length === 0, consoleErrors.join(" | "));
-  check("không có alert nào từ dữ liệu sản phẩm", dialogs.every((d) => d.startsWith("Xoá sản phẩm này")));
+  check("không có alert nào từ dữ liệu sản phẩm", dialogs.every((d) => d.startsWith("Xoá sản phẩm này") || d.startsWith("Tạo lại sẽ thay")));
 } catch (e) {
   check("kịch bản chạy hết", false, e.message);
   try { await shot("error.png"); } catch {}
