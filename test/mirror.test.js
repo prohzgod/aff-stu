@@ -131,3 +131,31 @@ test("URL không phải https (file:, javascript:, rỗng) → không gọi fetc
   assert.equal(f.calls.length, 0);
   assert.deepEqual(r.images.map((i) => i.stored), [null, null, null]);
 });
+
+test("SVG (có thể chứa script) không được lưu; rơi xuống preview hợp lệ", async () => {
+  const b = makeBucket();
+  const f = fakeFetch({ ...allOk(), [O(1)]: { type: "image/svg+xml", body: "<svg><script>alert(1)</script></svg>" }, [PV(1)]: webp, [O(2)]: { type: "image/svg+xml" } });
+  const r = await mirrorMedia(b, ID, cocoon, f);
+  assert.equal(r.images[0].stored, `p/${ID}/img_01.webp`);
+  assert.equal(r.images[1].stored, null);
+  for (const o of (await b.list({ prefix: "p/" })).objects) assert.notEqual(o.httpMetadata.contentType, "image/svg+xml");
+});
+
+test("content-type được lưu ở dạng chuẩn hoá, không kèm tham số", async () => {
+  const b = makeBucket(), f = fakeFetch({ ...allOk(), [O(1)]: { type: "IMAGE/JPEG; charset=x" }, [V]: { type: "application/octet-stream" } });
+  await mirrorMedia(b, ID, cocoon, f);
+  assert.equal((await b.head(`p/${ID}/img_01.jpg`)).httpMetadata.contentType, "image/jpeg");
+  assert.equal((await b.head(`p/${ID}/video_header.mp4`)).httpMetadata.contentType, "video/mp4");
+});
+
+test("không có content-length và nguồn vô tận: dừng đọc ngay khi vượt giới hạn", async () => {
+  let pulled = 0;
+  const chunk = new Uint8Array(1024 * 1024);
+  const endless = () => new ReadableStream({ pull(c) { pulled += chunk.length; c.enqueue(chunk); } });
+  const f = async (url) => (String(url) === V
+    ? new Response(endless(), { headers: { "content-type": "video/mp4" } })
+    : new Response("forbidden", { status: 403 }));
+  const r = await mirrorMedia(makeBucket(), ID, { ...cocoon, images: [] }, f);
+  assert.equal(r.videos.header.stored, null);
+  assert.ok(pulled <= 64 * MB, `đã đọc ${pulled / MB}MB`);
+});

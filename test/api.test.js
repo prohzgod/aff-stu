@@ -245,3 +245,21 @@ test("key ngoài p/ hoặc không có → 404", async () => {
   }
   assert.equal((await mediaHandler(ctx("GET", "/media/", { params: {} }))).status, 404);
 });
+
+test("/media: mọi response có CSP sandbox; type ngoài danh sách an toàn bị hạ thành octet-stream", async () => {
+  await putMedia();
+  const ok = await media(KEY);
+  assert.equal(ok.headers.get("content-security-policy"), "default-src 'none'; sandbox");
+  assert.equal(ok.headers.get("content-type"), "video/mp4");
+  for (const [name, type] of [["a.svg", "image/svg+xml"], ["b.html", "text/html"], ["product.json", "application/json; charset=utf-8"], ["c.bin", undefined]]) {
+    const key = `p/abcdefghij/${name}`;
+    await env.BUCKET.put(key, "<svg><script>alert(1)</script></svg>", { httpMetadata: type ? { contentType: type } : {} });
+    const r = await media(key);
+    assert.equal(r.status, 200, name);
+    assert.equal(r.headers.get("content-type"), "application/octet-stream", name);
+    assert.equal(r.headers.get("content-security-policy"), "default-src 'none'; sandbox", name);
+    assert.match(r.headers.get("content-disposition"), /^attachment/, name);
+  }
+  const partial = await media(KEY, { Range: "bytes=0-1" });
+  assert.equal(partial.headers.get("content-security-policy"), "default-src 'none'; sandbox");
+});

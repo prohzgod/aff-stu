@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   json, newId, isValidId, retentionDays, expiresAt, isExpired,
-  indexKey, productKey, mediaKeyOk, extFromContentType,
+  indexKey, productKey, mediaKeyOk, extFromContentType, safeMediaType,
 } from "../lib/util.js";
 
 test("newId: 10 ký tự a-z0-9, khác nhau mỗi lần", () => {
@@ -49,6 +49,9 @@ test("extFromContentType", () => {
   assert.equal(extFromContentType("image/png", "jpg"), "png");
   assert.equal(extFromContentType("image/webp; charset=binary", "jpg"), "webp");
   assert.equal(extFromContentType("video/mp4", "bin"), "mp4");
+  assert.equal(extFromContentType("image/gif", "jpg"), "gif");
+  assert.equal(extFromContentType("image/avif", "jpg"), "avif");
+  assert.equal(extFromContentType("image/svg+xml", "jpg"), "jpg");
   assert.equal(extFromContentType(null, "jpg"), "jpg");
   assert.equal(extFromContentType("text/html", "jpg"), "jpg");
 });
@@ -58,4 +61,11 @@ test("json() trả UTF-8", async () => {
   assert.equal(r.status, 201);
   assert.match(r.headers.get("content-type"), /application\/json; charset=utf-8/);
   assert.deepEqual(await r.json(), { a: "ấ" });
+});
+
+test("safeMediaType: chỉ ảnh raster và video, đã chuẩn hoá", () => {
+  assert.equal(safeMediaType("image/jpeg"), "image/jpeg");
+  assert.equal(safeMediaType("IMAGE/PNG; charset=x"), "image/png");
+  assert.equal(safeMediaType("video/mp4"), "video/mp4");
+  for (const t of ["image/svg+xml", "text/html", "application/json", "application/octet-stream", "", null, undefined]) assert.equal(safeMediaType(t), null, String(t));
 });

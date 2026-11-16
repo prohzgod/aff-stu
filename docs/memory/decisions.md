@@ -2,6 +2,15 @@
 
 Mới nhất ở trên. Mỗi mục: quyết định, lý do. Thứ đã có trong `docs/spec/` thì không chép lại ở đây.
 
+## 2026-11-16 · `/media` chỉ phục vụ đúng loại cho ảnh raster và video
+Sau review phase 1: `lib/mirror.js` chỉ lưu `image/jpeg|png|webp|gif|avif` và `video/mp4|webm|quicktime` (video `application/octet-stream` lưu thành `video/mp4`). `/media` trả mọi loại khác dưới dạng `application/octet-stream` kèm `Content-Disposition: attachment`, và luôn có `Content-Security-Policy: default-src 'none'; sandbox`. Lý do: `/media` không cần token và cùng origin với app giữ token trong localStorage; một file SVG có script mở trực tiếp sẽ đọc được token. Hệ quả cho phase sau: file mới muốn hiển thị trực tiếp qua `/media` phải thêm vào danh sách trong `lib/util.js`.
+
+## 2026-11-16 · `/media` đọc được `product.json` nếu biết id
+Có chủ ý, theo spec mục 10: đường dẫn chứa id ngẫu nhiên 10 ký tự và tự hết hạn. Nếu sau này cần kín hơn thì siết regex ở `mediaKeyOk` theo đuôi file.
+
+## 2026-11-16 · File chưa lưu về kho: nút "↗ Mở" thay cho `window.open`
+Spec mục 8 ghi "Download fallback `window.open`". Bản hiện tại dùng thẻ `<a target="_blank">` (cùng kết quả, không bị chặn popup). Chưa sửa câu chữ trong spec.
+
 ## 2026-11-16 · Extension nằm trong repo, sửa trực tiếp ở phase 4
 Thư mục `product-grabber/` đã được đưa vào repo sau khi thiết kế được duyệt. Việc "mở tab sau khi gửi" ở phase 4 sẽ sửa thẳng `product-grabber/popup.js`, không viết hướng dẫn trong README nữa. Thay cho quyết định "Extension" bên dưới.
 Lưu ý từ code extension: `videos.header` và `videos.description` có thể là `null`; popup gửi header `Authorization` đúng như người dùng nhập (phải nhập cả chữ `Bearer `).
