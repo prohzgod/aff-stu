@@ -14,6 +14,7 @@ import { onRequestPut as packageHandler } from "../functions/api/products/[id]/p
 import { onRequestPut as uploadHandler } from "../functions/api/products/[id]/upload/[name].js";
 import { onRequestGet as brandGet, onRequestPut as brandPut } from "../functions/api/brandkit.js";
 import { onRequestPost as transcribeHandler } from "../functions/api/transcribe.js";
+import { onRequestGet as editGet, onRequestPut as editPut } from "../functions/api/products/[id]/edit.js";
 
 const cocoonText = readFileSync(new URL("./fixtures/cocoon.json", import.meta.url), "utf8");
 const cocoon = JSON.parse(cocoonText);
@@ -628,4 +629,71 @@ test("transcribe: chưa có key → 503; Groq hết hạn mức → 429; không 
   const limited = await transcribe(wavBytes());
   assert.equal(limited.status, 429);
   assert.match((await limited.json()).error, /hết hạn mức/);
+});
+
+// ---------- phase 8: đồng bộ dự án dựng (edit.json) ----------
+
+const getEdit = (id) => editGet(ctx("GET", `/api/products/${id}/edit`, { params: { id } }));
+const putEdit = (id, body) => editPut(ctx("PUT", `/api/products/${id}/edit`, { params: { id }, body: typeof body === "string" ? body : JSON.stringify(body), headers: { "Content-Type": "application/json" } }));
+const project = () => ({
+  segments: [
+    { id: "a1", type: "clip", name: "do.mp4", sourceId: "s1", r2Key: null, srcDuration: 10, fps: 24, hasAudio: true, in: 0, out: 3, muted: false, fit: "cover", width: 720, height: 1280 },
+    { id: "a2", type: "image", name: "Ảnh 1", sourceId: "s2", r2Key: "p/abcdefghij/img_01.jpg", duration: 2, kenBurns: true, fit: "blur", width: 800, height: 800 },
+  ],
+  useWatermark: true,
+  overlays: { hook: { enabled: true, text: "Thử ngay" }, price: { enabled: true, text: "Chỉ 217K" }, cta: { enabled: false, text: "" } },
+  subtitles: { enabled: true, style: "box", sig: "x", lines: [{ text: "Da dầu", start: 0.4, end: 0.9, words: [{ w: "Da", start: 0.4, end: 0.6 }, { w: "dầu", start: 0.6, end: 0.9 }] }] },
+});
+
+test("edit: chưa có thì trả null; lưu rồi đọc lại đúng nội dung kèm updatedAt", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  assert.deepEqual(await (await getEdit(id)).json(), { edit: null });
+  const mine = project();
+  mine.segments[1].r2Key = `p/${id}/img_01.jpg`; // file của chính sản phẩm này: được giữ
+  const r = await putEdit(id, mine);
+  assert.equal(r.status, 200);
+  const { edit } = await r.json();
+  assert.ok(Date.now() - Date.parse(edit.updatedAt) < 60000);
+  assert.deepEqual({ ...edit, updatedAt: undefined }, { ...mine, updatedAt: undefined });
+  assert.deepEqual((await (await getEdit(id)).json()).edit, edit);
+  assert.notEqual(await env.BUCKET.head(`p/${id}/edit.json`), null);
+});
+
+test("edit: chỉ giữ các trường đã biết, bỏ trường lạ và dữ liệu của file", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  const body = project();
+  body.hack = "x";
+  body.segments[0].blob = "dữ liệu";
+  body.segments[0].__proto__ = { evil: true };
+  body.segments[1].r2Key = "cfg/brandkit.json"; // key ngoài sản phẩm này
+  const { edit } = await (await putEdit(id, body)).json();
+  assert.equal("hack" in edit, false);
+  assert.equal("blob" in edit.segments[0], false);
+  assert.equal(edit.segments[1].r2Key, null);
+});
+
+test("edit: đầu vào sai bị từ chối, bản đã lưu giữ nguyên", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  await putEdit(id, project());
+  const saved = (await (await getEdit(id)).json()).edit;
+  const bad = [
+    "abc", [], { segments: "x" },
+    { ...project(), segments: Array.from({ length: 13 }, () => project().segments[0]) },
+    { ...project(), segments: [{ ...project().segments[0], type: "khác" }] },
+    { ...project(), segments: [{ ...project().segments[0], in: "0" }] },
+    { ...project(), subtitles: { ...project().subtitles, style: "lạ" } },
+    { ...project(), overlays: { hook: { enabled: "có", text: "x" } } },
+  ];
+  for (const body of bad) assert.equal((await putEdit(id, body)).status, 400, JSON.stringify(body).slice(0, 60));
+  assert.equal((await putEdit(id, { ...project(), subtitles: { ...project().subtitles, lines: Array.from({ length: 5000 }, () => project().subtitles.lines[0]) } })).status, 413);
+  assert.deepEqual((await (await getEdit(id)).json()).edit, saved);
+  assert.equal((await getEdit("zzzzzzzzzz")).status, 404);
+  assert.equal((await putEdit("../x", project())).status, 404);
+});
+
+test("edit: xoá sản phẩm xoá luôn edit.json", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  await putEdit(id, project());
+  await deleteHandler(ctx("DELETE", "/", { params: { id } }));
+  assert.equal(env.BUCKET._store.size, 0);
 });

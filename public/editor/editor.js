@@ -15,48 +15,11 @@ import { activeOverlays, defaultOverlays, drawTikTokUi } from "./overlays.js";
 import { loadFonts } from "./fonts.js";
 import { SUBTITLE_STYLES, wordsToLines, linesFromText, activeLine, toSrt, nudgeLine, splitLine, mergeLines, setLineText } from "./subtitles.js";
 import { putClip, getClip, deleteClip, pruneOldClips } from "./local-clips.js";
+import { createWorker } from "./worker-client.js";
 
 const IMAGE_SECONDS = 2;
 const seconds = (v) => `${v.toFixed(1)}s`;
 const newId = () => Math.random().toString(36).slice(2, 10);
-
-// ---------- worker ----------
-
-function createWorker() {
-  const worker = new Worker("/editor/render-worker.js", { type: "module" });
-  let probeSeq = 0;
-  const waiting = new Map();
-  let onProgress = null, settle = null;
-  worker.addEventListener("message", ({ data }) => {
-    if (data.type === "probe") waiting.get(data.id)?.(data);
-    else if (data.type === "audio") waiting.get(`audio${data.id}`)?.(data);
-    else if (data.type === "capabilities") waiting.get("cap")?.(data);
-    else if (data.type === "progress") onProgress?.(data.value);
-    else if (data.type === "done") settle?.resolve(data);
-    else if (data.type === "error") settle?.reject(Object.assign(new Error(data.message), { cancelled: data.cancelled }));
-  });
-  worker.addEventListener("error", (e) => settle?.reject(new Error(e.message || "Không chạy được bộ xuất video")));
-  return {
-    capabilities: () => new Promise((resolve) => { waiting.set("cap", resolve); worker.postMessage({ type: "capabilities" }); }),
-    probe: (blob) => new Promise((resolve, reject) => {
-      const id = ++probeSeq;
-      waiting.set(id, (data) => { waiting.delete(id); data.error ? reject(new Error(data.error)) : resolve(data.info); });
-      worker.postMessage({ type: "probe", id, blob });
-    }),
-    audio: (job) => new Promise((resolve, reject) => {
-      const id = ++probeSeq;
-      waiting.set(`audio${id}`, (data) => { waiting.delete(`audio${id}`); data.error ? reject(new Error(data.error)) : resolve(data); });
-      worker.postMessage({ type: "audio", id, job });
-    }),
-    render: (job, progress) => new Promise((resolve, reject) => {
-      onProgress = progress;
-      settle = { resolve, reject };
-      worker.postMessage({ type: "render", job });
-    }),
-    cancel: () => worker.postMessage({ type: "cancel" }),
-    terminate: () => worker.terminate(),
-  };
-}
 
 // ---------- màn hình ----------
 
@@ -93,6 +56,7 @@ export function renderEditor(container, product, pkg = null) {
   const progress = h("progress", { class: "ed-progress", max: "1", value: "0", hidden: true });
   const progressLabel = h("span", { class: "muted", hidden: true });
   const resultBox = h("section", { class: "card ed-result", hidden: true });
+  const syncLabel = h("span", { class: "muted ed-sync", role: "status" });
   const overlayBox = h("section", { class: "card ed-overlays" });
   const coverBox = h("section", { class: "card ed-cover", hidden: true });
   const subsBox = h("section", { class: "card ed-subs" });
@@ -120,7 +84,7 @@ export function renderEditor(container, product, pkg = null) {
     h("section", { class: "card" }, h("h1", {}, "Dựng video"), h("p", { class: "muted" }, product.title), notice, drop),
     h("div", { class: "ed-main" },
       h("div", { class: "ed-left" },
-        h("section", { class: "card ed-timeline" }, h("h2", {}, "Các đoạn"), listEl, summary, problems),
+        h("section", { class: "card ed-timeline" }, h("div", { class: "row" }, h("h2", {}, "Các đoạn"), h("span", { class: "push" }, syncLabel)), listEl, summary, problems),
         overlayBox,
         subsBox,
         coverBox,
@@ -138,8 +102,34 @@ export function renderEditor(container, product, pkg = null) {
   );
 
   // ----- lưu trạng thái trên thiết bị -----
+  // Lưu ngay trên thiết bị, rồi đẩy lên máy chủ (edit.json) sau khi ngừng sửa 1,5 giây để mở tiếp được trên máy khác.
+  let loaded = false;      // chưa khôi phục xong thì không ghi đè gì
+  let updatedAt = null;
+  let syncTimer = null;
+  const snapshot = () => ({ segments, useWatermark, overlays, subtitles });
+  const saveLocal = (dirty) => {
+    try { localStorage.setItem(storeKey, JSON.stringify({ ...snapshot(), updatedAt, dirty })); } catch { /* đầy bộ nhớ: bỏ qua */ }
+  };
+  async function pushEdit() {
+    syncTimer = null;
+    const sent = JSON.stringify(snapshot());
+    try {
+      const { edit } = await api(`/api/products/${product.id}/edit`, { method: "PUT", body: sent });
+      if (sent !== JSON.stringify(snapshot())) return; // đã sửa tiếp trong lúc gửi: lần gửi sau sẽ lo
+      updatedAt = edit.updatedAt;
+      saveLocal(false);
+      syncLabel.textContent = "Đã đồng bộ";
+    } catch (err) {
+      syncLabel.textContent = err.status === 401 ? "Chưa đồng bộ: token không đúng" : "Chưa đồng bộ được (vẫn lưu trên thiết bị này)";
+    }
+  }
   const persist = () => {
-    try { localStorage.setItem(storeKey, JSON.stringify({ segments, useWatermark, overlays, subtitles })); } catch { /* đầy bộ nhớ: bỏ qua */ }
+    if (!loaded) return;
+    updatedAt = new Date().toISOString();
+    saveLocal(true);
+    syncLabel.textContent = "Đang đồng bộ…";
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(pushEdit, 1500);
   };
 
   function setSegments(next, { keepResult = false } = {}) {
@@ -718,6 +708,21 @@ export function renderEditor(container, product, pkg = null) {
   async function restore() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(storeKey) || "null"); } catch { saved = null; }
+    // Bản trên máy chủ mới hơn (sửa từ máy khác) thì dùng bản đó; bản trên máy này mới hơn mà chưa gửi thì gửi lại.
+    let remote = null;
+    try { ({ edit: remote } = await api(`/api/products/${product.id}/edit`)); } catch { remote = null; }
+    const localTime = Date.parse(saved?.updatedAt || "") || 0;
+    const remoteTime = Date.parse(remote?.updatedAt || "") || 0;
+    let pushAfter = false;
+    if (remote && remoteTime > localTime) {
+      saved = remote;
+      syncLabel.textContent = "Đã đồng bộ";
+    } else if (saved && (saved.dirty || localTime > remoteTime)) {
+      pushAfter = true;
+    } else if (remote) {
+      syncLabel.textContent = "Đã đồng bộ";
+    }
+    updatedAt = saved?.updatedAt || null;
     for (const kind of ["hook", "price", "cta"]) {
       const o = saved?.overlays?.[kind];
       if (o && typeof o.enabled === "boolean" && typeof o.text === "string") overlays[kind] = { enabled: o.enabled, text: o.text.slice(0, 120) };
@@ -748,6 +753,9 @@ export function renderEditor(container, product, pkg = null) {
       } catch { /* thiếu file: hàng đó sẽ hiện nút chọn lại */ }
     }
     segments = list;
+    loaded = true;
+    if (pushAfter) persist();
+    else if (remote && remoteTime > localTime) saveLocal(false);
     drawList();
     showAt(0);
   }
@@ -788,6 +796,7 @@ export function renderEditor(container, product, pkg = null) {
   // Dọn dẹp khi rời màn hình (router gọi).
   return () => {
     stop();
+    if (syncTimer) { clearTimeout(syncTimer); pushEdit(); } // rời màn hình khi còn thay đổi chưa gửi: gửi ngay
     worker.terminate();
     clearResult();
     for (const src of sources.values()) URL.revokeObjectURL(src.url);

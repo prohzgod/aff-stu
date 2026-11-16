@@ -246,6 +246,14 @@ button.chip { min-height: 44px; padding: 0 14px; font-size: 0.95rem; color: var(
 .final-video, .final-cover { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; background: #000; }
 .ed-left { display: grid; gap: var(--gap); min-width: 0; }
 .ov-row input[type="text"] { min-height: 40px; }
+.batch-template { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.batch-list { display: grid; gap: 8px; }
+.batch-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.batch-row input { width: 22px; height: 22px; min-height: 0; accent-color: var(--accent); }
+.batch-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-status, .batch-row progress, .batch-row .btn { grid-column: 2; justify-self: start; }
+.batch-row[data-state="done"] { border-color: var(--ok); }
+.batch-row[data-state="error"] { border-color: var(--danger); }
 .sub-list { display: grid; gap: 8px; max-height: 420px; overflow: auto; padding-right: 4px; }
 .sub-row { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .sub-row input[type="text"] { min-height: 40px; }

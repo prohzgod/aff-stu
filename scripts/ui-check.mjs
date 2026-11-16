@@ -1,4 +1,4 @@
-// Kiểm UI (phase 1–7) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
+// Kiểm UI (phase 1–8) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
 // Chạy: node scripts/ui-check.mjs [thư mục lưu ảnh chụp]
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from "node:fs";
@@ -361,6 +361,11 @@ try {
   await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && document.querySelectorAll('.seg').length === 3", "mở lại trình dựng");
   check("tải lại trang: 3 đoạn còn nguyên, không đoạn nào thiếu file, điểm cắt được giữ", await ev("!document.querySelector('.seg .field-error') && document.querySelector('.ed-summary').textContent === '3 đoạn · 6.0s' && !document.querySelector('[data-action=\"export\"]').disabled"));
   check("tải lại trang: chữ hook đã sửa được giữ", (await ev("document.querySelector('[data-overlay-text=\"hook\"]').value")) === "Thử ngay ấ ệ ữ");
+  // ----- phase 8: đồng bộ dự án dựng -----
+  await waitFor("document.querySelector('.ed-sync')?.textContent === 'Đã đồng bộ'", "đồng bộ dự án lên máy chủ");
+  const remoteEdit = await ev("fetch('/api/products/" + id + "/edit', { headers: { Authorization: 'Bearer ' + localStorage.getItem('APP_TOKEN') } }).then((r) => r.json())");
+  check("dự án dựng được lưu lên máy chủ: 3 đoạn, điểm cắt, chữ hook, phụ đề; không kèm dữ liệu file", remoteEdit.edit.segments.length === 3 && remoteEdit.edit.segments[2].in === 1 && remoteEdit.edit.overlays.hook.text === "Thử ngay ấ ệ ữ" && remoteEdit.edit.subtitles.lines.length > 3 && !JSON.stringify(remoteEdit).includes("blob"), JSON.stringify(remoteEdit).slice(0, 120));
+
   // ----- phase 6: ảnh bìa -----
   await ev("document.querySelector('[data-action=\"open-cover\"]').click()");
   await waitFor("document.querySelector('.ed-cover')?.dataset.ready === '1' && !!document.querySelector('.cover-stage canvas')", "mở trình làm ảnh bìa");
@@ -378,6 +383,33 @@ try {
   check("lưu ảnh bìa lần hai không tạo thêm đoạn bìa", await ev("[...document.querySelectorAll('.seg-name')].filter((n) => n.textContent.includes('Ảnh bìa')).length === 1"));
   await shot("5-cover.png");
 
+  // ----- phase 8: dựng hàng loạt -----
+  await waitFor("document.querySelector('.ed-sync')?.textContent === 'Đã đồng bộ'", "đồng bộ sau khi chèn ảnh bìa");
+  await ev("location.hash = '#/batch'");
+  await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && !!document.querySelector('[data-batch-row]')", "mở dựng hàng loạt");
+  check("dựng hàng loạt: sản phẩm đã sắp clip được chọn sẵn, ghi rõ số đoạn và thời lượng", await ev("(() => { const r = document.querySelector('[data-batch-row=\"" + id + "\"]'); return r.querySelector('input').checked && r.querySelector('.batch-status').textContent.startsWith('4 đoạn · 6.2s') && document.querySelector('[data-action=\"batch-run\"]').textContent === 'Xuất và lưu lên kho 1 video'; })()"));
+  await ev("(() => { for (const [id, v] of [['batch-hook', 'off'], ['batch-subs', 'off']]) { const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); } document.querySelector('[data-action=\"batch-run\"]').click(); })()");
+  await waitFor("document.querySelector('.editor')?.dataset.done === '1'", "dựng hàng loạt xong");
+  check("dựng hàng loạt: xuất và lưu xong, có link mở sản phẩm", await ev("(() => { const r = document.querySelector('[data-batch-row=\"" + id + "\"]'); return r.dataset.state === 'done' && !!r.querySelector('.batch-status a') && document.querySelector('.batch-overall').textContent === 'Xong 1 video.'; })()"));
+  const batched = await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    const blob = await (await fetch("/media/p/${id}/final.mp4", { cache: "no-store" })).blob();
+    const v = await new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) }).getPrimaryVideoTrack();
+    const cs = new MB.CanvasSink(v, { width: 270, height: 480, fit: "fill" });
+    const count = async (t, x, y, w, h) => { const d = (await cs.getCanvas(t)).canvas.getContext("2d").getImageData(x, y, w, h).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 190 && d[i + 1] > 170) n++; return n; };
+    return { w: v.displayWidth, frames: (await v.computePacketStats()).packetCount, hook: await count(1.2, 40, 60, 190, 40), subs: await count(1.2, 20, 215, 215, 70), cta: await count(5.8, 40, 330, 190, 26) };
+  })()`);
+  check("video trên kho là bản dựng hàng loạt: có đoạn bìa (149 frame), chữ hook và phụ đề đã tắt theo thiết lập chung, CTA vẫn còn", batched.w === 1080 && batched.frames === 149 && batched.hook === 0 && batched.subs === 0 && batched.cta > 300, JSON.stringify(batched));
+
+  // ----- phase 8: mở trên máy khác (không có file clip) -----
+  await ev("location.hash = '#/p/" + id + "/edit'");
+  await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && document.querySelectorAll('.seg').length === 4", "mở lại trình dựng");
+  await ev("(async () => { localStorage.removeItem('edit:" + id + "'); await new Promise((r) => { const q = indexedDB.deleteDatabase('affiliate-studio'); q.onsuccess = q.onerror = q.onblocked = () => r(); }); })()");
+  await send("Page.reload");
+  await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && document.querySelectorAll('.seg').length === 4", "mở trình dựng như trên máy khác");
+  check("máy khác: dự án lấy về từ máy chủ, đoạn nhập từ máy báo 'Thiếu clip', đoạn lấy từ kho vẫn có", await ev("(() => { const missing = [...document.querySelectorAll('.seg')].map((s) => !!s.querySelector('.field-error')); return missing.join() === 'true,true,false,true' && document.querySelector('.ed-timeline > .field-error').textContent.startsWith('Có đoạn thiếu file') && document.querySelector('[data-action=\"export\"]').disabled; })()"));
+  check("máy khác: chữ hook và phụ đề vẫn nguyên", await ev("document.querySelector('[data-overlay-text=\"hook\"]').value === 'Thử ngay ấ ệ ữ' && document.querySelectorAll('.sub-row').length > 3"));
+
   await ev("location.hash = '#/p/" + id + "'");
   await waitFor("!!document.querySelector('.final-video')", "video thành phẩm trên trang sản phẩm");
   await waitFor("document.querySelector('.final-cover')?.complete && document.querySelector('.final-cover').naturalWidth > 0", "ảnh bìa trên trang sản phẩm");
@@ -392,9 +424,10 @@ try {
   check("trang sản phẩm có video thành phẩm: không cuộn ngang ở 375px", await noOverflow());
 
   // 5. danh sách có 1 card
+  // (nút dựng hàng loạt được kiểm ở bước kiểm card bên dưới)
   await ev("location.hash = '#/'");
   await waitFor("!!document.querySelector('.pcard')", "card");
-  check("card: tiêu đề dạng chữ, giá, badge", await ev(`(() => { const c = document.querySelector('.pcard'); return c.querySelector('.pcard-title').textContent === ${JSON.stringify(XSS)} && c.querySelector('.price').textContent === '216.749₫' && c.querySelectorAll('.badge')[0].textContent === 'Đã có gói' && [...c.querySelectorAll('.badge')].some((b) => b.textContent === 'Có video') && [...c.querySelectorAll('.badge')].some((b) => b.textContent === 'còn 7 ngày') && c.querySelector('img').getAttribute('src').startsWith('/media/p/'); })()`));
+  check("card: tiêu đề dạng chữ, giá, badge", await ev(`(() => { const c = document.querySelector('.pcard'); return c.querySelector('.pcard-title').textContent === ${JSON.stringify(XSS)} && c.querySelector('.price').textContent === '216.749₫' && c.querySelectorAll('.badge')[0].textContent === 'Đã có gói' && [...c.querySelectorAll('.badge')].some((b) => b.textContent === 'Có video') && !!document.querySelector('[data-action=\"open-batch\"]') && [...c.querySelectorAll('.badge')].some((b) => b.textContent === 'còn 7 ngày') && c.querySelector('img').getAttribute('src').startsWith('/media/p/'); })()`));
   check("danh sách: không cuộn ngang ở 375px", await noOverflow());
   await shot("3-list.png");
 

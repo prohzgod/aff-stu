@@ -2,6 +2,12 @@
 
 Mới nhất ở trên. Mỗi mục: quyết định, lý do. Thứ đã có trong `docs/spec/` thì không chép lại ở đây.
 
+## 2026-11-16 · Phase 8: các quyết định khi dựng
+- **Dựng hàng loạt làm theo cách hiểu của người dựng,** vì chủ dự án bảo chạy hết các phase không dừng hỏi: lô gồm các sản phẩm đã có dự án dựng trên thiết bị; "cùng một template" nghĩa là một bộ bật/tắt lớp và kiểu phụ đề áp cho cả lô, còn nội dung chữ và thứ tự đoạn là của từng sản phẩm. Cần chủ dự án xác nhận khi dùng thật.
+- **Đồng bộ `edit.json`:** trình dựng lưu ngay vào `localStorage` kèm `updatedAt` và cờ `dirty`, rồi PUT sau 1,5 giây ngừng sửa. Khi mở: bản nào có `updatedAt` mới hơn thì dùng; bản trên máy còn `dirty` thì gửi lại.
+- **Server lọc `edit.json`:** chỉ giữ các trường đã biết, `r2Key` chỉ được trỏ vào `p/{id}/` của chính sản phẩm đó.
+- **`createWorker` tách ra `public/editor/worker-client.js`,** `project.js` chuẩn bị dự án để xuất mà không cần mở trình dựng; cả hai dùng chung cho trình dựng và dựng hàng loạt.
+
 ## 2026-11-16 · Phase 7: các quyết định khi dựng
 - **Groq:** endpoint `POST https://api.groq.com/openai/v1/audio/transcriptions`, multipart, `response_format=verbose_json`, `timestamp_granularities[]=word` và `segment`. Model mặc định `whisper-large-v3` (tài liệu Groq khuyên cho đa ngôn ngữ cần chính xác); đổi bằng `GROQ_MODEL`. Giới hạn free: file 25MB; 10 phút WAV 16kHz mono là 19MB nên nằm gọn. Tài liệu không cho ví dụ về mảng `words`, nên code nhận cả `word` lẫn `text`, và nếu không có mốc từng từ thì chia đều từ trong mỗi đoạn.
 - **LLM chỉ được sửa chữ, không được đổi số từ.** `applyCorrections` bỏ kết quả nếu số từ lệch. Dùng chung `callLlm` của phần sinh gói.

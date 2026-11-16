@@ -90,6 +90,11 @@ MP4 · H.264 High · 1080x1920 · 30fps (giữ fps nguồn nếu 24/25/30) · ~8
 ```
 Clip `local:` không có trên máy khác → editor hiện "Thiếu clip, chọn lại file" nhưng giữ nguyên overlay/phụ đề.
 
+**Như đã dựng (16/11/2026):** `edit.json` lưu `{segments, useWatermark, overlays: {hook, price, cta}, subtitles: {enabled, style, sig, lines}, updatedAt}`; mỗi đoạn có `sourceId` và `r2Key` (thay cho chuỗi `source`), ảnh bìa là một đoạn `image` có `isCover`. Bản mới hơn (theo `updatedAt`) thắng.
+
+### 9.11 Dựng hàng loạt (`#/batch`)
+Liệt kê các sản phẩm đã có dự án dựng và đủ file clip trên thiết bị này. Chọn sản phẩm, chọn thiết lập chung (watermark, chữ hook, sticker giá, lời kêu gọi: giữ/bật/tắt; phụ đề: giữ/tắt/bật theo một kiểu), rồi xuất lần lượt từng video và lưu thẳng lên kho (kèm `subs.srt` nếu có phụ đề). Nội dung chữ vẫn là của từng sản phẩm. Một video lỗi không làm dừng cả lô.
+
 ### 9.10 Hỗ trợ thiết bị
 - Chrome/Edge desktop: đầy đủ, nhanh nhất (laptop RTX dùng encoder phần cứng qua WebCodecs).
 - Android Chrome: đầy đủ.

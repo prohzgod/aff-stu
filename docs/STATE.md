@@ -1,8 +1,16 @@
 # Trạng thái
 
-**Phase hiện tại:** 7 · Phụ đề tự động — code xong. Mọi phase từ 1 đến 7 đang chờ chủ dự án deploy và kiểm trên thiết bị thật (chủ dự án đã bảo làm hết các phase rồi mới test)
+**Phase hiện tại:** 8 · Đồng bộ & dựng hàng loạt — code xong. Mọi phase từ 1 đến 8 đang chờ chủ dự án deploy và kiểm trên thiết bị thật (chủ dự án đã bảo làm hết các phase rồi mới test)
 **Thiết kế:** docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
-**Việc kế tiếp:** Phase 8 (đồng bộ `edit.json`, dựng hàng loạt), rồi phase 8.5 (Enhance AI)
+**Việc kế tiếp:** Phase 8.5 (Enhance AI bằng WebSR/WebGPU)
+
+## Checklist phase 8
+- [x] `GET/PUT /api/products/:id/edit` (`edit.json`): lưu dự án dựng, chỉ giữ trường đã biết
+- [x] Trình dựng tự đồng bộ sau 1,5 giây ngừng sửa; mở lại thì bản mới hơn thắng
+- [x] Máy khác: đoạn nhập từ máy báo "Thiếu clip, chọn lại file", chữ và phụ đề giữ nguyên
+- [x] Dựng hàng loạt `#/batch`: thiết lập chung, xuất lần lượt, lưu thẳng lên kho
+- [x] Nghiệm thu phần kiểm được trên máy dev
+- (Upload `final.mp4`/`cover.png`/`subs.srt`, video thành phẩm trên trang sản phẩm, brand kit: đã làm ở phase 5–7)
 
 ## Checklist phase 7
 - [x] Worker tách tiếng của timeline thành WAV 16kHz mono
@@ -70,6 +78,19 @@
 (chưa có)
 
 ## Nghiệm thu gần nhất
+
+**2026-11-16 · Phase 8 · trên máy dev**
+
+Đã chạy và đạt: `npm test` 222/222; `node scripts/ui-check.mjs` 117/117. Trong Chrome thật: dự án dựng lên máy chủ đủ đoạn, điểm cắt, chữ, phụ đề và không kèm dữ liệu file; dựng hàng loạt xuất và lưu được, video trên kho đúng là bản mới (149 frame, chữ hook và phụ đề tắt theo thiết lập chung, CTA còn); xoá sạch dữ liệu trên thiết bị rồi mở lại (giả lập máy khác) thì dự án về từ máy chủ, ba đoạn nhập từ máy báo thiếu clip, đoạn lấy từ kho vẫn có, chữ và phụ đề nguyên vẹn.
+
+Tiêu chí ✅ của phase 8 ("Dựng trên laptop → mở điện thoại thấy video + ảnh bìa + caption trên cùng một trang, bấm ↗ chia sẻ thẳng sang TikTok"):
+- Video, ảnh bìa, phụ đề và caption cùng nằm trên trang sản phẩm: **đạt trên máy dev**.
+- Mở trên điện thoại thật và chia sẻ sang TikTok: **chờ chủ dự án kiểm**.
+
+**Chờ chủ dự án kiểm (phase 8):**
+1. Dựng trên laptop, lưu lên kho; mở trang sản phẩm trên điện thoại: thấy video, ảnh bìa, link phụ đề và caption; bấm "↗ Chia sẻ" sang TikTok.
+2. Mở "Dựng video" của cùng sản phẩm trên một trình duyệt khác: các đoạn hiện "Thiếu clip, chọn lại file"; chọn lại đúng file thì dựng tiếp được.
+3. Sắp clip cho 2–3 sản phẩm, vào Danh sách → "🎬 Dựng hàng loạt", bấm xuất. Xem cách chọn "thiết lập chung" có đúng ý không: đây là phần spec tả ít nhất và mình tự quyết cách làm.
 
 **2026-11-16 · Phase 7 · trên máy dev**
 
@@ -191,6 +212,12 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 3. Mở app trên iPhone, nhập token, mở sản phẩm: ảnh hiện, video phát và tua được, tải thử một ảnh.
 4. Xem dòng ghi chú trong khối "Ảnh & video". Nếu có "N file chưa lưu được về kho" tức CDN thật từ chối server: báo lại để ghi vào `docs/memory/gotchas.md` và xử lý.
 
+## Tồn đọng nhỏ từ phase 8 (chưa sửa)
+- Đồng bộ theo kiểu "bản lưu sau cùng thắng": sửa cùng lúc trên hai máy thì bản lưu sau đè bản trước, không gộp.
+- Dựng hàng loạt chỉ làm được với sản phẩm đã sắp clip trên chính thiết bị này; không tự ghép clip cho sản phẩm chưa sắp.
+- Thiết lập chung của dựng hàng loạt chỉ bật/tắt các lớp và chọn kiểu phụ đề; không đổi nội dung chữ hay thứ tự đoạn.
+- Ảnh bìa đã chèn làm đoạn đầu cũng là file trên thiết bị: sang máy khác phải làm lại ảnh bìa (bản `cover.png` trên kho vẫn còn).
+
 ## Tồn đọng nhỏ từ phase 7 (chưa sửa)
 - Phụ đề lấy mốc theo timeline lúc tạo. Đổi thứ tự, cắt hay chèn đoạn sau đó thì chỉ có cảnh báo, chưa tự dời mốc.
 - "Dùng lời thoại từ kịch bản" rải đều chữ theo thời lượng cả video, không biết clip nào nói câu nào.
@@ -231,5 +258,4 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 - `scripts/ui-check.mjs` viết cứng đường dẫn Chrome trên macOS.
 
 ## Các phase sau
-- [ ] Phase 8: Đồng bộ `edit.json` & dựng hàng loạt (cần làm rõ lại phần batch với chủ dự án)
 - [ ] Phase 8.5: Enhance AI

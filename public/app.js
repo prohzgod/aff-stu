@@ -251,7 +251,11 @@ async function viewList(seq) {
     ), add);
     return;
   }
-  show(h("div", { class: "grid" }, items.map(productCard)), add);
+  show(
+    h("div", { class: "row list-tools" }, h("a", { class: "btn small push", href: "#/batch", "data-action": "open-batch" }, "🎬 Dựng hàng loạt")),
+    h("div", { class: "grid" }, items.map(productCard)),
+    add,
+  );
 }
 
 // ---------- chi tiết ----------
@@ -398,6 +402,22 @@ function mediaSection(product, pkgState) {
   );
 }
 
+// Dựng hàng loạt nhiều sản phẩm.
+async function viewBatch(seq) {
+  show(loading("Đang mở dựng hàng loạt…"));
+  let batch;
+  try {
+    batch = await import("/editor/batch.js");
+  } catch {
+    if (seq === renderSeq) show(errorState("Không mở được dựng hàng loạt", route));
+    return;
+  }
+  if (seq !== renderSeq) return;
+  const box = h("div", { class: "editor" });
+  show(box);
+  leaveView = batch.renderBatch(box);
+}
+
 // Màn hình dựng video. Mã của editor (và thư viện video) chỉ được tải khi vào đây.
 async function viewEditor(id, seq) {
   show(loading("Đang mở trình dựng video…"));
@@ -494,6 +514,7 @@ function route() {
   if (edit) return viewEditor(edit[1], seq);
   const detail = /^\/p\/([a-z0-9]+)$/.exec(hash);
   if (detail) return viewDetail(detail[1], seq);
+  if (hash === "/batch") return viewBatch(seq);
   if (hash === "/") return viewList(seq);
   location.hash = "#/";
 }
