@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "platform": "tiktokshop",
+  "region": "vn",
+  "productId": "1736191557601166757",
+  "url": "https://shop.tiktok.com/vn/pdp/1736191557601166757",
+  "title": "COMBO Tinh chất bí đao N7 Cocoon 70ml + Nước bí đao cân bằng da 140ml",
+  "price": { "current": 216749, "original": 377952, "discount": "-43%", "currency": "VND", "display": "216.749₫" },
+  "soldCount": 229096,
+  "rating": 4.7,
+  "reviewCount": 321,
+  "shopName": "Cocoon Vietnam",
+  "images": [
+    { "original": "https://cdn.example.test/img1~tplv-aphluv4xwc-origin-jpeg.jpeg", "preview": "https://cdn.example.test/img1.webp", "width": 800, "height": 800 },
+    { "original": "https://cdn.example.test/img2~tplv-aphluv4xwc-origin-jpeg.jpeg", "preview": "https://cdn.example.test/img2.webp", "width": 800, "height": 800 },
+    { "original": "https://cdn.example.test/img3~tplv-aphluv4xwc-origin-jpeg.jpeg", "preview": "https://cdn.example.test/img3.webp", "width": 800, "height": 800 }
+  ],
+  "videos": {
+    "header": { "url": "https://cdn.example.test/v1.mp4", "backupUrl": "https://cdn.example.test/v1b.mp4", "width": 720, "height": 1280, "duration": 19.9, "expiresAt": "2026-11-17T00:00:00.000Z" },
+    "description": { "url": "https://cdn.example.test/v1.mp4", "backupUrl": "https://cdn.example.test/v1b.mp4", "width": 720, "height": 1280, "duration": 19.9, "expiresAt": "2026-11-17T00:00:00.000Z" }
+  },
+  "description": "THÔNG TIN SẢN PHẨM: Tinh chất bí đao N7 chứa 7% Niacinamide, chiết xuất bí đao, rau má và tràm trà.",
+  "descriptionImages": [],
+  "specifications": [{ "name": "Benefit", "value": "Kiểm soát dầu,Chăm sóc da mụn" }],
+  "skus": [{ "skuId": "1729384756", "stock": 337, "price": 216749, "originalPrice": 377952, "props": "Mặc định" }],
+  "grabbedAt": "2026-11-16T05:00:00.000Z"
+}

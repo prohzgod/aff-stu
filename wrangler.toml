@@ -1,0 +1,13 @@
+name = "affiliate-studio"
+pages_build_output_dir = "./public"
+compatibility_date = "2026-11-01"
+
+[vars]
+RETENTION_DAYS = "7"
+LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "affiliate-studio"
+
+# secrets: APP_TOKEN, LLM_API_KEY, GROQ_API_KEY  (wrangler pages secret put ...)
