@@ -2,6 +2,15 @@
 
 Mới nhất ở trên. Mỗi mục: quyết định, lý do. Thứ đã có trong `docs/spec/` thì không chép lại ở đây.
 
+## 2026-11-17 · Tích hợp CIT Voice Studio (phase 8.6)
+- **Chủ dự án yêu cầu** tích hợp CIT Voice Studio (TTS chạy local). Người dựng chọn đặt nó ở **trình dựng video** (lồng tiếng cho video faceless), vì đó là chỗ có tiếng; Studio không cần giọng nói. Cần chủ dự án xác nhận đây là cách dùng mong muốn.
+- **Trình duyệt gọi thẳng `127.0.0.1`,** không có endpoint proxy trên Pages: Worker trên Cloudflare không với tới máy của chủ dự án.
+- **Chỉ hỗ trợ CIT cùng máy.** CIT qua LAN cần khoá API; lưu khoá đó trong `localStorage` sẽ phá luật 5, nên chưa làm.
+- **Dùng `generate-with-subtitles`** thay cho `generate`: có luôn mốc từng câu để làm phụ đề, không cần gọi Groq.
+- **WAV giải mã bằng hàm thuần** (`decodeWav` trong `audio.js`), không qua Mediabunny: định dạng đơn giản, test được bằng `node --test`, và CIT chèn khối `LIST` trước `data` nên phải đi theo từng khối.
+- **Tiếng clip khi có giọng đọc:** hệ số cố định (giữ 100%, nhỏ 25%, tắt 0%) chứ không tự hạ theo lúc giọng nói (ducking). Đơn giản, đủ cho clip Flow.
+- **Phase 8.5 tạm dừng** ở trạng thái cũ; làm 8.6 trước vì chủ dự án yêu cầu.
+
 ## 2026-11-16 · Phase 8: các quyết định khi dựng
 - **Dựng hàng loạt làm theo cách hiểu của người dựng,** vì chủ dự án bảo chạy hết các phase không dừng hỏi: lô gồm các sản phẩm đã có dự án dựng trên thiết bị; "cùng một template" nghĩa là một bộ bật/tắt lớp và kiểu phụ đề áp cho cả lô, còn nội dung chữ và thứ tự đoạn là của từng sản phẩm. Cần chủ dự án xác nhận khi dùng thật.
 - **Đồng bộ `edit.json`:** trình dựng lưu ngay vào `localStorage` kèm `updatedAt` và cờ `dirty`, rồi PUT sau 1,5 giây ngừng sửa. Khi mở: bản nào có `updatedAt` mới hơn thì dùng; bản trên máy còn `dirty` thì gửi lại.

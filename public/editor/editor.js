@@ -8,8 +8,11 @@ import { canShareFiles, shareFiles, downloadBlob } from "/lib/share.js";
 import { slug } from "/lib/package-text.js";
 import { shortName } from "/lib/prompt-library.js";
 import {
-  OUTPUT, LIMITS, segmentDuration, totalDuration, clampTrim, moveSegment, validateTimeline, locate, kenBurnsScale,
+  OUTPUT, LIMITS, segmentDuration, totalDuration, clampTrim, moveSegment, validateTimeline, locate, kenBurnsScale, outputFps,
 } from "./timeline.js";
+import {
+  DEFAULT_VOICE_URL, CLIP_GAIN, CLIP_VOLUME_LABELS, SPEED, createVoiceClient, healthProblem, normalizeVoiceover, scriptText, voiceStart, voiceOverrun, cuesToLines,
+} from "./voice.js";
 import { composeFrame } from "./compose.js";
 import { activeOverlays, defaultOverlays, drawTikTokUi } from "./overlays.js";
 import { loadFonts } from "./fonts.js";
@@ -34,6 +37,9 @@ export function renderEditor(container, product, pkg = null) {
   let overlays = defaultOverlays(product, pkg);
   let showTikTok = false;
   let subtitles = { enabled: true, style: "karaoke", lines: [], sig: "" };
+  let voiceover = normalizeVoiceover({ text: scriptText(pkg) });
+  let voiceBlob = null, voiceUrl = "";
+  const voiceAudio = h("audio", { class: "voice-audio", controls: true, preload: "auto" });
   let canExport = false;
   let exporting = false;
   let result = null; // { blob, url, info }
@@ -60,6 +66,7 @@ export function renderEditor(container, product, pkg = null) {
   const overlayBox = h("section", { class: "card ed-overlays" });
   const coverBox = h("section", { class: "card ed-cover", hidden: true });
   const subsBox = h("section", { class: "card ed-subs" });
+  const voiceBox = h("section", { class: "card ed-voice" });
   const coverButton = h("button", { class: "btn", type: "button", "data-action": "open-cover", onclick: openCover }, "🖼 Tạo ảnh bìa");
   const tiktokToggle = h("input", { id: "ed-tiktok", type: "checkbox" });
   tiktokToggle.addEventListener("change", () => { showTikTok = tiktokToggle.checked; if (!playing) drawCurrent(); });
@@ -86,6 +93,7 @@ export function renderEditor(container, product, pkg = null) {
       h("div", { class: "ed-left" },
         h("section", { class: "card ed-timeline" }, h("div", { class: "row" }, h("h2", {}, "Các đoạn"), h("span", { class: "push" }, syncLabel)), listEl, summary, problems),
         overlayBox,
+        voiceBox,
         subsBox,
         coverBox,
       ),
@@ -106,7 +114,7 @@ export function renderEditor(container, product, pkg = null) {
   let loaded = false;      // chưa khôi phục xong thì không ghi đè gì
   let updatedAt = null;
   let syncTimer = null;
-  const snapshot = () => ({ segments, useWatermark, overlays, subtitles });
+  const snapshot = () => ({ segments, useWatermark, overlays, subtitles, voiceover });
   const saveLocal = (dirty) => {
     try { localStorage.setItem(storeKey, JSON.stringify({ ...snapshot(), updatedAt, dirty })); } catch { /* đầy bộ nhớ: bỏ qua */ }
   };
@@ -138,6 +146,7 @@ export function renderEditor(container, product, pkg = null) {
     persist();
     drawList();
     drawSubsBox();
+    drawVoiceBox();
     stop();
     showAt(Math.min(time, Math.max(0, totalDuration(segments) - 0.01)));
   }
@@ -209,9 +218,11 @@ export function renderEditor(container, product, pkg = null) {
     summary.textContent = segments.length ? `${segments.length} đoạn · ${seconds(total)}` : "";
     const errors = segments.length ? validateTimeline(segments) : [];
     const missing = segments.some((s) => !sources.has(s.sourceId));
-    problems.textContent = errors[0] || (missing ? "Có đoạn thiếu file. Chọn lại file cho đoạn đó hoặc xoá đoạn." : "");
+    const voiceMissing = voiceover.enabled && voiceover.sourceId && !voiceBlob;
+    problems.textContent = errors[0] || (missing ? "Có đoạn thiếu file. Chọn lại file cho đoạn đó hoặc xoá đoạn." : "")
+      || (voiceMissing ? "Thiếu file giọng đọc trên thiết bị này. Tạo lại giọng đọc, hoặc bỏ chọn \"Dùng giọng đọc trong video\"." : "");
     problems.hidden = !problems.textContent;
-    exportButton.disabled = exporting || !canExport || !segments.length || errors.length > 0 || missing;
+    exportButton.disabled = exporting || !canExport || !segments.length || errors.length > 0 || missing || voiceMissing;
   }
 
   function update(index, change) {
@@ -345,11 +356,27 @@ export function renderEditor(container, product, pkg = null) {
     drawCurrent();
   }
 
+  // ----- giọng đọc khi xem trước -----
+  const voiceActive = () => Boolean(voiceover.enabled && voiceBlob);
+  const voiceAt = () => voiceStart(segments, outputFps(segments));
+  // Giữ <audio> của giọng đọc theo đúng thời điểm của timeline (gọi mỗi frame khi đang phát).
+  function syncVoice() {
+    if (!playing || !voiceActive()) { if (!voiceAudio.paused) voiceAudio.pause(); return; }
+    const rel = time - voiceAt();
+    const inside = rel >= 0 && rel < (voiceAudio.duration || voiceover.duration);
+    if (!inside) { if (!voiceAudio.paused) voiceAudio.pause(); return; }
+    if (voiceAudio.paused || Math.abs(voiceAudio.currentTime - rel) > 0.25) {
+      voiceAudio.currentTime = rel;
+      if (voiceAudio.paused) voiceAudio.play().catch(() => {});
+    }
+  }
+
   function stop() {
     playing = false;
     cancelAnimationFrame(raf);
     activeVideo?.pause();
     activeVideo = null;
+    if (!voiceAudio.paused) voiceAudio.pause();
     playButton.textContent = "▶ Xem trước";
   }
 
@@ -361,7 +388,9 @@ export function renderEditor(container, product, pkg = null) {
     clock = performance.now() - offset * 1000;
     if (seg.type === "clip" && src) {
       activeVideo = src.el;
-      activeVideo.muted = seg.muted || !seg.hasAudio;
+      const gain = voiceActive() ? CLIP_GAIN[voiceover.clipVolume] : 1;
+      activeVideo.muted = seg.muted || !seg.hasAudio || gain === 0;
+      activeVideo.volume = gain || 1;
       activeVideo.currentTime = seg.in + offset;
       activeVideo.play().catch(() => {});
     }
@@ -398,6 +427,7 @@ export function renderEditor(container, product, pkg = null) {
         time = segStart + Math.max(0, offset);
         drawSegment(seg, Math.max(0, offset));
       }
+      syncVoice();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -431,6 +461,165 @@ export function renderEditor(container, product, pkg = null) {
       row("cta", "Lời kêu gọi", "Hiện trong 2,5 giây cuối, sát mép dưới vùng an toàn."),
       ...(pkg ? [] : [h("p", { class: "hint" }, "Sản phẩm chưa có gói đăng bài nên chữ hook chưa có sẵn. Tạo gói ở trang sản phẩm rồi quay lại, hoặc tự gõ.")]),
     );
+  }
+
+  // ----- lồng tiếng AI (CIT Voice Studio chạy trên máy này, spec mục 9.12) -----
+  // Địa chỉ CIT là của từng máy nên chỉ nhớ trên thiết bị. Đã kết nối được một lần thì lần sau tự kết nối.
+  const VOICE_URL_KEY = "cit:url", VOICE_AUTO_KEY = "cit:auto";
+  const readPref = (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
+  const writePref = (key, value) => { try { localStorage.setItem(key, value); } catch { /* bỏ qua */ } };
+  let citUrl = readPref(VOICE_URL_KEY, DEFAULT_VOICE_URL);
+  let cit = { state: "idle", message: "", engine: "", voices: [] }; // state: idle | connecting | ready | error
+  let voiceBusy = false;
+
+  function setVoiceBlob(blob) {
+    if (voiceUrl) URL.revokeObjectURL(voiceUrl);
+    voiceBlob = blob;
+    voiceUrl = blob ? URL.createObjectURL(blob) : "";
+    if (voiceUrl) voiceAudio.src = voiceUrl; else voiceAudio.removeAttribute("src");
+  }
+
+  function setVoiceover(change, { redraw = true } = {}) {
+    voiceover = { ...voiceover, ...change };
+    clearResult();
+    persist();
+    drawList();
+    if (redraw) { drawVoiceBox(); drawSubsBox(); }
+  }
+
+  async function connectVoice() {
+    cit = { ...cit, state: "connecting", message: "" };
+    drawVoiceBox();
+    const client = createVoiceClient(citUrl);
+    try {
+      const health = await client.health();
+      const problem = healthProblem(health);
+      if (problem) throw new Error(problem);
+      const voices = await client.voices();
+      if (!voices.length) throw new Error("CIT Voice Studio chưa có giọng nào.");
+      cit = { state: "ready", message: "", engine: String(health.engine || ""), voices };
+      writePref(VOICE_AUTO_KEY, "1");
+    } catch (err) {
+      cit = { ...cit, state: "error", message: err.message };
+    }
+    drawVoiceBox();
+  }
+
+  async function generateVoice() {
+    const text = voiceover.text.trim();
+    if (voiceBusy || cit.state !== "ready") return;
+    if (!text) return toast("Nhập lời đọc trước.");
+    voiceBusy = true;
+    drawVoiceBox();
+    try {
+      const voiceId = cit.voices.some((v) => v.id === voiceover.voiceId) ? voiceover.voiceId : cit.voices[0].id;
+      const out = await createVoiceClient(citUrl).synth({ text, voiceId, speed: voiceover.speed });
+      if (out.blob.type !== "audio/wav") throw new Error("CIT Voice Studio trả về định dạng không phải WAV");
+      const old = voiceover.sourceId;
+      const sourceId = `voice-${newId()}`;
+      await putClip(product.id, sourceId, out.blob, "giong-doc.wav").catch(() => {});
+      if (old) deleteClip(product.id, old).catch(() => {});
+      setVoiceBlob(out.blob);
+      setVoiceover({ voiceId, sourceId, duration: out.duration, cues: out.cues, enabled: true });
+      if (!subtitles.lines.length && out.cues.length) voiceSubtitles({ quiet: true });
+      toast("Đã tạo giọng đọc");
+    } catch (err) {
+      toast(err.message);
+      if (/kết nối|tải mô hình/.test(err.message)) { cit = { ...cit, state: "error", message: err.message }; }
+    } finally {
+      voiceBusy = false;
+      drawVoiceBox();
+    }
+  }
+
+  function removeVoice() {
+    if (voiceover.sourceId) deleteClip(product.id, voiceover.sourceId).catch(() => {});
+    setVoiceBlob(null);
+    setVoiceover({ sourceId: "", duration: 0, cues: [] });
+  }
+
+  function drawVoiceBox() {
+    const status = {
+      idle: h("p", { class: "muted voice-status" }, "Đọc lời thoại bằng CIT Voice Studio đang chạy trên máy này."),
+      connecting: h("p", { class: "muted voice-status" }, "Đang kết nối CIT Voice Studio…"),
+      ready: h("p", { class: "muted voice-status", "data-state": "ready" }, `Đã kết nối CIT Voice Studio${cit.engine ? ` · ${cit.engine}` : ""}`),
+      error: h("p", { class: "field-error voice-status", "data-state": "error" }, cit.message),
+    }[cit.state];
+    const connectButton = cit.state !== "ready" && h("button", { class: "btn", type: "button", "data-action": "voice-connect", disabled: cit.state === "connecting", onclick: connectVoice },
+      cit.state === "error" ? "Thử kết nối lại" : "Kết nối CIT Voice Studio");
+
+    const urlInput = h("input", { id: "voice-url", type: "url", value: citUrl, "aria-label": "Địa chỉ CIT Voice Studio" });
+    urlInput.addEventListener("change", () => {
+      citUrl = urlInput.value.trim() || DEFAULT_VOICE_URL;
+      writePref(VOICE_URL_KEY, citUrl);
+      connectVoice();
+    });
+    const urlBox = h("details", { class: "manual" }, h("summary", {}, "Địa chỉ CIT"),
+      h("div", { class: "field" }, urlInput, h("p", { class: "hint" }, `Mặc định ${DEFAULT_VOICE_URL}. Chỉ dùng được CIT chạy trên chính máy này.`)));
+
+    const voices = cit.voices.length ? cit.voices : voiceover.voiceId ? [{ id: voiceover.voiceId, label: voiceover.voiceId }] : [];
+    const voiceSelect = h("select", { id: "voice-id", disabled: cit.state !== "ready" },
+      voices.map((v) => h("option", { value: v.id, selected: v.id === voiceover.voiceId }, v.label)));
+    voiceSelect.addEventListener("change", () => setVoiceover({ voiceId: voiceSelect.value }, { redraw: false }));
+
+    const speedLabel = h("span", { class: "muted" }, `${voiceover.speed.toFixed(2)}x`);
+    const speed = h("input", { id: "voice-speed", type: "range", min: String(SPEED.min), max: String(SPEED.max), step: "0.05", value: String(voiceover.speed) });
+    speed.addEventListener("input", () => { speedLabel.textContent = `${Number(speed.value).toFixed(2)}x`; });
+    speed.addEventListener("change", () => setVoiceover({ speed: Number(speed.value) }, { redraw: false }));
+
+    const text = h("textarea", { id: "voice-text", rows: "5", maxlength: "5000" }, voiceover.text);
+    text.addEventListener("input", () => setVoiceover({ text: text.value }, { redraw: false }));
+
+    const hasVoice = Boolean(voiceover.sourceId);
+    const extra = [];
+    if (hasVoice && !voiceBlob) {
+      extra.push(h("p", { class: "field-error voice-missing" }, "Thiếu file giọng đọc trên thiết bị này. Bấm \"Tạo giọng đọc\" để đọc lại."));
+    }
+    if (voiceBlob) {
+      const start = voiceAt();
+      const over = voiceOverrun(start, voiceover.duration, totalDuration(segments));
+      extra.push(
+        voiceAudio,
+        h("p", { class: "muted voice-info" }, `Dài ${seconds(voiceover.duration)} · bắt đầu ở giây ${start.toFixed(1)} · ${voiceover.cues.length} câu`),
+        over > 0 && h("p", { class: "field-error voice-over" }, `Giọng đọc dài hơn video ${over.toFixed(1)} giây, phần thừa sẽ bị cắt. Thêm đoạn hoặc rút bớt lời.`),
+      );
+    }
+    if (hasVoice) {
+      const on = h("input", { id: "voice-on", type: "checkbox", checked: voiceover.enabled });
+      on.addEventListener("change", () => setVoiceover({ enabled: on.checked }));
+      const clipVol = h("select", { id: "voice-clip-volume" },
+        Object.entries(CLIP_VOLUME_LABELS).map(([value, label]) => h("option", { value, selected: voiceover.clipVolume === value }, label)));
+      clipVol.addEventListener("change", () => setVoiceover({ clipVolume: clipVol.value }, { redraw: false }));
+      extra.push(
+        h("div", { class: "gen-grid" },
+          h("label", { class: "check" }, on, "Dùng giọng đọc trong video"),
+          h("div", { class: "field" }, h("label", { for: "voice-clip-volume" }, "Tiếng của clip"), clipVol),
+        ),
+        h("div", { class: "row wrap" }, h("button", { class: "btn small danger", type: "button", "data-action": "voice-remove", onclick: removeVoice }, "Xoá giọng đọc")),
+        h("p", { class: "hint" }, "Video có giọng đọc AI: khi đăng TikTok, bật nhãn \"Nội dung do AI tạo\"."),
+      );
+    }
+
+    voiceBox.replaceChildren(...[
+      h("h2", {}, "Lồng tiếng AI"),
+      status,
+      connectButton && h("div", { class: "row wrap" }, connectButton),
+      urlBox,
+      h("div", { class: "gen-grid" },
+        h("div", { class: "field" }, h("label", { for: "voice-id" }, "Giọng"), voiceSelect),
+        h("div", { class: "field" }, h("label", { for: "voice-speed" }, "Tốc độ đọc"), h("div", { class: "row" }, speed, speedLabel)),
+      ),
+      h("div", { class: "field" },
+        h("label", { for: "voice-text" }, "Lời đọc"),
+        text,
+        h("p", { class: "hint" }, "Lấy sẵn từ kịch bản của gói đăng bài. Chèn [nghỉ 1s] để ngắt, [cười] để thêm tiếng cười."),
+      ),
+      h("div", { class: "row wrap" },
+        h("button", { class: "btn primary", type: "button", "data-action": "voice-generate", disabled: voiceBusy || cit.state !== "ready", onclick: generateVoice }, voiceBusy ? "Đang đọc…" : hasVoice ? "Tạo lại giọng đọc" : "Tạo giọng đọc"),
+        pkg && h("button", { class: "btn small", type: "button", "data-action": "voice-script", onclick: () => setVoiceover({ text: scriptText(pkg) }) }, "Lấy lại từ kịch bản"),
+      ),
+      ...extra,
+    ].filter(Boolean));
   }
 
   // ----- phụ đề -----
@@ -481,6 +670,14 @@ export function renderEditor(container, product, pkg = null) {
     setSubtitles({ lines, sig: timelineSig(), enabled: true });
   }
 
+  // Mỗi câu CIT đã đọc thành dòng phụ đề đúng mốc; không cần gửi tiếng đi phiên âm.
+  function voiceSubtitles({ quiet = false } = {}) {
+    const lines = cuesToLines(voiceover.cues, voiceAt(), subtitles.style);
+    if (!lines.length) return toast("Chưa có giọng đọc. Tạo giọng đọc trước.");
+    setSubtitles({ lines, sig: timelineSig(), enabled: true });
+    if (!quiet) toast("Đã tạo phụ đề từ giọng đọc");
+  }
+
   function drawSubsBox() {
     const ready = segments.length > 0 && segments.every((s) => sources.has(s.sourceId));
     const enabled = h("input", { id: "subs-on", type: "checkbox", checked: subtitles.enabled });
@@ -517,6 +714,7 @@ export function renderEditor(container, product, pkg = null) {
       h("div", { class: "row wrap" },
         h("button", { class: "btn primary", type: "button", "data-action": "subs-auto", disabled: subsBusy || !ready, onclick: autoSubtitles }, subsBusy ? "Đang tạo…" : "Tạo phụ đề tự động"),
         h("button", { class: "btn", type: "button", "data-action": "subs-script", disabled: subsBusy || !ready, onclick: scriptSubtitles }, "Dùng lời thoại từ kịch bản"),
+        voiceover.cues.length > 0 && h("button", { class: "btn", type: "button", "data-action": "subs-voice", disabled: subsBusy || !segments.length, onclick: () => voiceSubtitles() }, "Dùng mốc câu của giọng đọc"),
       ),
       subsMessage && h("p", { class: subsBusy ? "muted subs-message" : "field-error subs-message" }, subsMessage),
       stale && h("p", { class: "field-error subs-stale" }, "Các đoạn đã thay đổi sau khi tạo phụ đề nên thời gian có thể lệch. Tạo lại phụ đề, hoặc chỉnh tay từng dòng."),
@@ -644,6 +842,7 @@ export function renderEditor(container, product, pkg = null) {
         watermark: watermark() ? { handle: brand.handle, position: brand.position, logoBlob } : null,
         overlays,
         subtitles: { enabled: subtitles.enabled, style: subtitles.style, lines: subtitles.lines },
+        voiceover: voiceActive() ? { blob: voiceBlob, clipVolume: voiceover.clipVolume } : null,
       };
       const { buffer, info } = await worker.render(job, (value) => {
         progress.value = value;
@@ -738,6 +937,11 @@ export function renderEditor(container, product, pkg = null) {
       };
       subsStyleChosen = true;
     }
+    if (saved?.voiceover) {
+      voiceover = normalizeVoiceover(saved.voiceover);
+      if (!voiceover.text) voiceover.text = scriptText(pkg);
+      if (voiceover.sourceId) setVoiceBlob(await getClip(product.id, voiceover.sourceId).catch(() => null));
+    }
     if (saved && typeof saved.useWatermark === "boolean") {
       useWatermark = saved.useWatermark;
       markToggle.checked = useWatermark;
@@ -788,6 +992,9 @@ export function renderEditor(container, product, pkg = null) {
     drawSubsBox();
     await Promise.all([restore(), loadBrand(), loadFonts(document.fonts)]);
     drawSubsBox();
+    drawVoiceBox();
+    // Chỉ tự kết nối CIT khi đã từng dùng trên máy này (Chrome có thể hỏi quyền truy cập mạng cục bộ).
+    if (readPref(VOICE_AUTO_KEY, "") || voiceover.sourceId) connectVoice();
     if (!playing) drawCurrent();
     drawList();
     container.dataset.ready = "1";
@@ -801,6 +1008,7 @@ export function renderEditor(container, product, pkg = null) {
     clearResult();
     for (const src of sources.values()) URL.revokeObjectURL(src.url);
     sources.clear();
+    setVoiceBlob(null);
     wakeLock?.release?.().catch(() => {});
   };
 }

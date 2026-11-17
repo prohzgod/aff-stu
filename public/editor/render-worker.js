@@ -2,13 +2,15 @@
 // Luồng: giải mã → composeFrame → mã hoá H.264 → đóng gói MP4. Tiếng được giải mã, ghép theo timeline rồi mã hoá lại AAC.
 //
 // Tin nhắn vào:  { type: "capabilities" } | { type: "probe", id, blob } | { type: "render", job } | { type: "cancel" }
+//                job.voiceover (tuỳ chọn): { blob: WAV giọng đọc, clipVolume: "keep" | "low" | "off" }
 //                { type: "audio", id, job }  → trả tiếng của timeline dạng WAV 16kHz mono (để gửi đi phiên âm)
 // Tin nhắn ra:   { type: "capabilities", video, audio } | { type: "probe", id, info | error }
 //                { type: "progress", value } | { type: "done", buffer, info } | { type: "error", message, cancelled? }
 
 import * as MB from "./vendor/mediabunny-1.66.0.min.mjs";
 import { OUTPUT, SAMPLE_RATE, buildSchedule, frameSourceTime, kenBurnsScale, outputFps, validateTimeline } from "./timeline.js";
-import { placeSamples } from "./audio.js";
+import { placeSamples, mixInto, decodeWav } from "./audio.js";
+import { CLIP_GAIN, voiceStart } from "./voice.js";
 import { composeFrame } from "./compose.js";
 import { activeOverlays } from "./overlays.js";
 import { loadFonts } from "./fonts.js";
@@ -79,6 +81,16 @@ async function mixAudio(segments, schedule, inputFor, stop = () => {}) {
   return mix;
 }
 
+// Giọng đọc AI (mục 9.12): hạ tiếng clip theo thiết lập rồi cộng giọng đọc vào cả hai kênh, bắt đầu sau đoạn ảnh bìa.
+async function addVoiceover(mix, voiceover, segments, fps) {
+  if (!voiceover?.blob) return;
+  const gain = CLIP_GAIN[voiceover.clipVolume] ?? CLIP_GAIN.low;
+  if (gain !== 1) for (const ch of mix) for (let i = 0; i < ch.length; i++) ch[i] *= gain;
+  const wav = decodeWav(await voiceover.blob.arrayBuffer());
+  const start = voiceStart(segments, fps);
+  mix.forEach((ch, c) => mixInto(ch, wav.channels[Math.min(c, wav.channels.length - 1)], wav.sampleRate, SAMPLE_RATE, start, 1));
+}
+
 // Tiếng của timeline dạng WAV 16kHz mono, nhỏ gọn để gửi đi phiên âm.
 async function timelineWav(job) {
   const { segments } = job;
@@ -95,7 +107,7 @@ async function timelineWav(job) {
 }
 
 async function render(job) {
-  const { segments, watermark, overlays, subtitles } = job;
+  const { segments, watermark, overlays, subtitles, voiceover } = job;
   const subsOn = Boolean(subtitles?.enabled && Array.isArray(subtitles.lines) && subtitles.lines.length);
   const problems = validateTimeline(segments);
   if (problems.length) throw new Error(problems[0]);
@@ -132,6 +144,7 @@ async function render(job) {
   try {
     // ----- tiếng -----
     const mix = await mixAudio(segments, schedule, inputFor, stop);
+    await addVoiceover(mix, voiceover, segments, fps);
 
     // ----- hình -----
     let done = 0;

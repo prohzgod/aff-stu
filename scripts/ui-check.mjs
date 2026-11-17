@@ -1,7 +1,7 @@
 // Kiểm UI (phase 1–8) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
 // Chạy: node scripts/ui-check.mjs [thư mục lưu ảnh chụp]
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, readdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +11,15 @@ const outDir = process.argv[2] || mkdtempSync(join(tmpdir(), "ui-shots-"));
 const B = "http://localhost:8788";
 const TOKEN = "dev-token-doi-truoc-khi-deploy";
 const PORT = 9333;
-const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
+const CHROME = [
+  process.env.CHROME,
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  "/usr/bin/google-chrome",
+].find((p) => p && existsSync(p));
+if (!CHROME) throw new Error("Không tìm thấy Chrome. Đặt biến CHROME=<đường dẫn>.");
+const chrome = spawn(CHROME, [
   "--headless=new", `--remote-debugging-port=${PORT}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "uichk-"))}`,
   "--no-first-run", "--window-size=375,812", "about:blank",
 ], { stdio: "ignore" });
@@ -167,7 +175,10 @@ try {
   let zipName;
   for (let i = 0; i < 80 && !zipName; i++) { await sleep(150); zipName = readdirSync(downloadDir).find((f) => f.endsWith(".zip")); }
   check("Tải tất cả .zip → có file tải về", !!zipName, zipName || "");
-  if (zipName) {
+  let hasPython = true;
+  try { execFileSync("python3", ["-c", "1"], { stdio: "ignore" }); } catch { hasPython = false; }
+  if (zipName && !hasPython) check("đọc lại zip bằng Python", false, "BỎ QUA: máy này không có python3");
+  if (zipName && hasPython) {
     const names = JSON.parse(execFileSync("python3", ["-c", "import json,sys,zipfile\nz=zipfile.ZipFile(sys.argv[1])\nassert z.testzip() is None\nprint(json.dumps(z.namelist()))", join(downloadDir, zipName)], { encoding: "utf8" }));
     check("zip hợp lệ, có ảnh đã lưu + goi-dang-bai.txt + product.json", names.includes("goi-dang-bai.txt") && names.includes("product.json") && names.some((n) => /^img_01\./.test(n)), names.join(", "));
     const txt = execFileSync("python3", ["-c", "import sys,zipfile\nsys.stdout.buffer.write(zipfile.ZipFile(sys.argv[1]).read('goi-dang-bai.txt'))", join(downloadDir, zipName)], { encoding: "utf8" });

@@ -297,3 +297,8 @@ button.chip { min-height: 44px; padding: 0 14px; font-size: 0.95rem; color: var(
   .btn, .pcard, .fab { transition: transform 0.12s ease, opacity 0.12s ease; }
   .btn:active, .pcard:active, .fab:active { transform: scale(0.97); }
 }
+
+/* Lồng tiếng AI */
+.ed-voice textarea { font-family: inherit; font-size: 0.95rem; }
+.ed-voice .voice-audio { width: 100%; margin-top: 8px; }
+.ed-voice input[type="range"] { flex: 1; min-width: 0; }

@@ -67,7 +67,7 @@ export function renderBatch(container) {
       row.bar.hidden = false;
       row.bar.value = 0;
       try {
-        const blobs = await loadSources(row.item.id, row.project.segments);
+        const blobs = await loadSources(row.item.id, row.project.segments, row.project.voiceover);
         const job = buildJob(row.project, blobs, brand, logoBlob, template);
         row.status.textContent = "Đang xuất…";
         const { buffer } = await worker.render(job, (value) => { row.bar.value = value; });

@@ -58,6 +58,25 @@ function cleanSubtitles(subs) {
   return { enabled: subs.enabled !== false, style: subs.style, sig: str(subs.sig, 4000), lines };
 }
 
+// Giọng đọc AI (spec mục 9.12). Chỉ thiết lập và mốc câu; file WAV nằm trên thiết bị đã tạo.
+// undefined → không có giọng đọc; sai kiểu → null (từ chối).
+const CLIP_VOLUMES = ["keep", "low", "off"];
+function cleanVoiceover(v) {
+  if (v === undefined) return undefined;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  if (typeof v.text !== "string" || typeof v.voiceId !== "string" || typeof v.sourceId !== "string") return null;
+  if (!num(v.speed) || !num(v.duration) || !CLIP_VOLUMES.includes(v.clipVolume) || !Array.isArray(v.cues) || v.cues.length > MAX_LINES) return null;
+  const cues = [];
+  for (const c of v.cues) {
+    if (!c || !num(c.start) || !num(c.end) || typeof c.text !== "string") return null;
+    cues.push({ start: c.start, end: c.end, text: c.text.slice(0, 300) });
+  }
+  return {
+    enabled: v.enabled !== false, text: v.text.slice(0, 5000), voiceId: v.voiceId.slice(0, 100), speed: Math.min(v.speed, 2),
+    clipVolume: v.clipVolume, sourceId: v.sourceId.slice(0, 60), duration: v.duration, cues,
+  };
+}
+
 const notFound = () => json({ error: "Không tìm thấy sản phẩm" }, 404);
 
 async function loadProduct(env, id) {
@@ -86,10 +105,11 @@ export async function onRequestPut({ request, env, params }) {
   const segments = body.segments.map((s) => cleanSegment(s, id));
   const overlays = cleanOverlays(body.overlays);
   const subtitles = cleanSubtitles(body.subtitles);
-  if (segments.includes(null) || !overlays || !subtitles) return bad();
+  const voiceover = cleanVoiceover(body.voiceover);
+  if (segments.includes(null) || !overlays || !subtitles || voiceover === null) return bad();
 
   if (!(await loadProduct(env, id))) return notFound();
-  const edit = { segments, useWatermark: body.useWatermark !== false, overlays, subtitles, updatedAt: new Date().toISOString() };
+  const edit = { segments, useWatermark: body.useWatermark !== false, overlays, subtitles, ...(voiceover ? { voiceover } : {}), updatedAt: new Date().toISOString() };
   await env.BUCKET.put(productKey(id, "edit.json"), JSON.stringify(edit), { httpMetadata: { contentType: "application/json; charset=utf-8" } });
   return json({ edit });
 }

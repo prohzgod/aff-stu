@@ -1,8 +1,18 @@
 # Trạng thái
 
-**Phase hiện tại:** 8.5 · Enhance AI — ĐANG LÀM DỞ. Phase 1 đến 8 code xong, chờ chủ dự án deploy và kiểm trên thiết bị thật
-**Thiết kế:** docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
-**Việc kế tiếp:** nối `public/editor/enhance.js` vào `render-worker.js` và trình dựng (xem checklist phase 8.5)
+**Phase hiện tại:** 8.6 · Lồng tiếng AI (CIT Voice Studio), chen trước 8.5 theo yêu cầu chủ dự án. Phase 8.5 tạm dừng. Phase 1 đến 8 code xong, chờ chủ dự án deploy và kiểm trên thiết bị thật
+**Thiết kế:** docs/spec/hau-ky.md mục 9.12; docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
+**Việc kế tiếp:** chủ dự án xác nhận cách tích hợp CIT (xem "Chờ chủ dự án kiểm (phase 8.6)"); sau đó quay lại phase 8.5 (nối `enhance.js` vào `render-worker.js`)
+
+## Checklist phase 8.6
+- [x] Spec mục 9.12, phases, decisions
+- [x] `audio.js`: `decodeWav`, `mixInto` (có test); `voice.js`: gọi CIT, lời đọc từ kịch bản, câu → dòng phụ đề (có test)
+- [x] `render-worker.js` trộn giọng đọc và hạ tiếng clip; `project.js` (dựng hàng loạt) nạp file giọng đọc
+- [x] `edit.json` nhận `voiceover` (có test)
+- [x] Khối "Lồng tiếng AI" trong trình dựng, xem trước có giọng, phụ đề từ mốc câu
+- [x] Kiểm thật trong Chrome với CIT đang chạy: `scripts/voice-check.mjs`
+- [x] Nghiệm thu phần kiểm được trên máy dev
+- [x] Commit (17/11/2026)
 
 ## Checklist phase 8.5
 - [x] Đưa WebSR 0.1.1 và trọng số `websr/cnn-m` vào `public/editor/vendor/` (sha256 của trọng số khớp tài liệu WebSR)
@@ -89,6 +99,26 @@ Ghi chú cho người làm tiếp: Chrome headless trên máy dev có WebGPU và
 (chưa có)
 
 ## Nghiệm thu gần nhất
+
+**2026-11-17 · Phase 8.6 (Lồng tiếng AI, CIT Voice Studio 1.0.6) · trên máy dev Windows**
+
+Máy dev đổi sang Windows với Node 20, nên `npm run dev` (wrangler cần Node 22) không chạy được. Phần kiểm giao diện chạy trên một server tạm (thư mục nháp, không nằm trong repo) gọi thẳng các handler thật trong `functions/` với R2 giả của test. Xem `docs/memory/gotchas.md`.
+
+Đã chạy:
+- Unit test: 239/242. Ba test trượt là `zip.test.js`, cần `python3` mà máy này không có; trượt cả khi chưa có thay đổi nào. 18 test mới (WAV, trộn tiếng, CIT, `edit.json`, dựng hàng loạt) đều đạt.
+- `node --experimental-websocket scripts/voice-check.mjs`: **16/16** với CIT thật (VieNeu-TTS-v3-Turbo) và Chrome headless thật. Kiểm: báo lỗi khi CIT sai cổng; kết nối và 25 giọng; tạo giọng đọc; phụ đề lấy theo mốc câu (lệch < 0,1s); xem trước phát giọng đọc lệch < 0,3s; `edit.json` lên máy chủ; **đọc lại file xuất**: tiếng clip "Tắt" thì chỉ còn giọng đọc, độ lệch so với file WAV của CIT bằng 0 (bước đo 0,1s); "Nhỏ lại" thì tiếng clip còn 0,071 (25% của 0,283); bỏ chọn giọng đọc thì tiếng clip nguyên vẹn; tải lại trang còn đủ; xoá file trên thiết bị (giả lập máy khác) thì báo thiếu và khoá nút Xuất.
+- `scripts/ui-check.mjs` (cũ): 113 đạt, 2 trượt. Một là bước đọc zip, bỏ qua vì không có Python. Một là "Copy caption + hashtag dùng nội dung đã sửa" ở trang Studio, phần không bị sửa trong đợt này; có thể do clipboard Windows, chưa xác minh. Toàn bộ phần dựng video, phụ đề, ảnh bìa và dựng hàng loạt đạt.
+
+Tiêu chí ✅ của phase 8.6:
+- "Lời thoại kịch bản → giọng đọc → video xuất có giọng đọc rõ, tiếng clip nhỏ lại, phụ đề khớp từng câu (lệch < 0,3s)": **đạt trên máy dev** (đo bằng số). Giọng đọc nghe có hay không thì **chờ chủ dự án nghe**.
+- "CIT tắt thì báo rõ, không treo trình dựng": **đạt** (thử với cổng sai).
+
+**Chờ chủ dự án kiểm (phase 8.6):**
+1. Xác nhận cách tích hợp: CIT dùng để **lồng tiếng trong trình dựng video**, trình duyệt gọi thẳng CIT trên cùng máy. Nếu bạn muốn dùng CIT ở chỗ khác (vd nghe thử hook ở trang Studio, hoặc gọi CIT từ máy khác trong LAN) thì báo lại.
+2. Deploy rồi mở trình dựng từ `https://….pages.dev` trên laptop có CIT: bấm "Kết nối CIT Voice Studio", xem Chrome có hỏi quyền mạng cục bộ không, cho phép, rồi tạo giọng đọc.
+3. Nghe video xuất: giọng có rõ không, mức "Nhỏ lại (25%)" của tiếng clip Flow có hợp không.
+4. Dựng hàng loạt một sản phẩm đã có giọng đọc: video ra phải có giọng đọc.
+5. Cài Node 22 trên máy Windows để `npm run dev` chạy lại được (và Python nếu muốn test zip chạy).
 
 **2026-11-16 · Phase 8 · trên máy dev**
 
@@ -265,8 +295,7 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 - `/media`: `If-None-Match` chỉ so chuỗi tuyệt đối; chưa có HEAD; vẫn phục vụ file quá 7 ngày tới khi lifecycle chạy.
 - POST kiểm giới hạn 1MB sau khi đã đọc hết body.
 - Gửi cùng một sản phẩm hai lần tạo hai mục (spec không nói).
-- Nên thêm CSP cho `public/index.html`.
-- `scripts/ui-check.mjs` viết cứng đường dẫn Chrome trên macOS.
+- Nên thêm CSP cho `public/index.html` (nhớ cho phép `connect-src` tới địa chỉ CIT, phase 8.6).
 
 ## Các phase sau
 - [ ] Phase 8.5: Enhance AI

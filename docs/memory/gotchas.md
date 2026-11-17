@@ -28,3 +28,13 @@ Gọi `.click()` bằng script thì cách copy dự phòng trả `false`. Trong 
 
 ## Clip Flow thật dài 10 giây, 24fps
 Spec giả định 8 giây. Giới hạn 60 giây của timeline nghĩa là tối đa 6 clip nguyên vẹn.
+
+## Máy dev Windows (từ 17/11/2026): Node 20, không có Python
+- `npm test` báo "Could not find 'test\*.test.js'": Node 20 không tự mở rộng glob và cmd không mở rộng giúp. Chạy trong Git Bash: `node --test --test-timeout=30000 test/*.test.js`.
+- `npm run dev` không chạy: wrangler 4 cần Node ≥ 22.12. Cần cài Node 22 (chủ dự án quyết).
+- 3 test trong `zip.test.js` và bước đọc zip của `ui-check.mjs` cần `python3`; máy không có thì trượt (ui-check ghi "BỎ QUA").
+- `ui-check.mjs`, `voice-check.mjs` trên Node 20 phải chạy với `node --experimental-websocket`.
+- ui-check "Copy caption + hashtag dùng nội dung đã sửa" trượt trên Windows; có thể do clipboard Windows đổi `\n` thành `\r\n` (chưa xác minh).
+
+## CIT Voice Studio: gọi từ trang HTTPS sang `http://127.0.0.1`
+Chrome coi `127.0.0.1` là an toàn nên không chặn mixed content, nhưng Chrome bản mới hỏi quyền "truy cập thiết bị trong mạng cục bộ" khi trang công khai (`*.pages.dev`) gọi vào máy. Từ chối thì `fetch` ném lỗi mạng giống như CIT chưa mở. Trên `localhost:8788` thì không hỏi. Trình dựng vì vậy chỉ tự kết nối CIT sau lần đầu người dùng bấm "Kết nối". Safari có thể chặn hẳn; dựng bằng Chrome/Edge.

@@ -697,3 +697,25 @@ test("edit: xoá sản phẩm xoá luôn edit.json", async () => {
   await deleteHandler(ctx("DELETE", "/", { params: { id } }));
   assert.equal(env.BUCKET._store.size, 0);
 });
+
+// ---------- phase 8.6: giọng đọc AI trong edit.json ----------
+
+const voice = () => ({ enabled: true, text: "Da dầu? [nghỉ 0.3s] Bấm giỏ hàng!", voiceId: "Trúc Ly", speed: 1.1, clipVolume: "low", sourceId: "voice-ab12", duration: 3.07, cues: [{ start: 0, end: 1.37, text: "Da dầu?" }] });
+
+test("edit: lưu và đọc lại giọng đọc AI; không gửi thì không có trường này", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  const { edit } = await (await putEdit(id, { ...project(), voiceover: voice() })).json();
+  assert.deepEqual(edit.voiceover, voice());
+  const plain = (await (await putEdit(id, project())).json()).edit;
+  assert.equal("voiceover" in plain, false);
+});
+
+test("edit: giọng đọc sai kiểu bị từ chối; trường lạ bị bỏ, chữ dài bị cắt", async () => {
+  const { id } = await (await post(cocoonText)).json();
+  for (const bad of [{ ...voice(), clipVolume: "to" }, { ...voice(), speed: "1" }, { ...voice(), cues: [{ start: "0", end: 1, text: "x" }] }, "x", { ...voice(), text: 5 }]) {
+    assert.equal((await putEdit(id, { ...project(), voiceover: bad })).status, 400, JSON.stringify(bad).slice(0, 60));
+  }
+  const { edit } = await (await putEdit(id, { ...project(), voiceover: { ...voice(), blob: "dữ liệu", text: "a".repeat(9000) } })).json();
+  assert.equal("blob" in edit.voiceover, false);
+  assert.equal(edit.voiceover.text.length, 5000);
+});

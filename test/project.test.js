@@ -49,3 +49,12 @@ test("projectSummary", () => {
   assert.deepEqual(projectSummary(project()), { count: 2, seconds: 5, problems: [] });
   assert.equal(projectSummary({ segments: Array.from({ length: 13 }, () => project().segments[1]) }).problems.length, 1);
 });
+
+test("buildJob: giọng đọc đã tạo thì đi kèm job với mức tiếng clip; tắt hoặc thiếu file thì không", () => {
+  const withVoice = { ...project(), voiceover: { enabled: true, sourceId: "v1", clipVolume: "off" } };
+  const all = new Map([...blobs, ["v1", "WAV"]]);
+  assert.deepEqual(buildJob(withVoice, all, brand, null).voiceover, { blob: "WAV", clipVolume: "off" });
+  assert.equal(buildJob({ ...withVoice, voiceover: { ...withVoice.voiceover, enabled: false } }, all, brand, null).voiceover, null);
+  assert.equal(buildJob(withVoice, blobs, brand, null).voiceover, null);
+  assert.equal(buildJob(project(), blobs, brand, null).voiceover, null);
+});

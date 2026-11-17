@@ -37,5 +37,9 @@
 - Tích hợp WebSR vào render worker (sau decode, trước overlay), downscale 1440x2560 → 1080x1920, cache model, nút So sánh 2 giây, ẩn khi không có WebGPU.
 - ✅ Trên laptop: clip 8s 720p xuất bản Enhance trong thời gian chấp nhận được (ghi lại số giây thực đo); chữ/phụ đề không bị mờ; trên iPhone không có WebGPU thì nút tự ẩn.
 
+**Phase 8.6: Lồng tiếng AI bằng CIT Voice Studio (½–1 buổi, thêm ngày 17/11/2026)**
+- Khối "Lồng tiếng AI" trong trình dựng gọi CIT chạy local (`/health`, `/voices`, `/api/tts/generate-with-subtitles`); giọng đọc giữ trên thiết bị, trộn vào tiếng khi xem trước và khi xuất, chỉnh tiếng clip (giữ/nhỏ/tắt); phụ đề lấy từ mốc câu của CIT; `edit.json` lưu thiết lập; dựng hàng loạt dùng được giọng đọc đã tạo.
+- ✅ Trên laptop có CIT: lời thoại kịch bản → giọng đọc → video xuất có giọng đọc rõ, tiếng clip nhỏ lại, phụ đề khớp từng câu (lệch < 0,3s); CIT tắt thì báo rõ, không treo trình dựng.
+
 **Phase 9 (tuỳ chọn):** fade chuyển cảnh, nhạc nền, tách nền ảnh sản phẩm cho ảnh bìa.
 

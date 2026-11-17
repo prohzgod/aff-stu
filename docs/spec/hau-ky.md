@@ -37,7 +37,7 @@ Clip/ảnh đầu vào (File từ máy, hoặc media trên R2)
 | Sticker giá | `price.current`, `price.discount` | "Chỉ 217K · -43%", hiện ở đoạn ảnh giá hoặc 3s cuối |
 | CTA | cố định / `script` nhịp cuối | "Bấm giỏ hàng 🛒" 2–3s cuối |
 | Watermark | brand kit (logo hoặc @kênh) | góc trên-trái, opacity 70%, suốt video |
-| Phụ đề | `/api/transcribe` | xem 9.5 |
+| Phụ đề | `/api/transcribe`, hoặc mốc câu của giọng đọc AI | xem 9.5, 9.12 |
 
 **Vùng an toàn TikTok (khung 1080x1920):** chừa ~130px trên, ~480px dưới, ~140px phải (cột nút like/share), ~44px trái. Phụ đề đặt với mép dưới ở **y = 1140** (tối đa 2 dòng), phía trên sticker giá (khoảng y 1160–1290) và CTA (khoảng y 1310–1430), để ba lớp không chồng nhau ở cuối video. Có nút "Xem lớp UI TikTok" để overlay giả lập giao diện TikTok khi preview.
 
@@ -91,9 +91,27 @@ MP4 · H.264 High · 1080x1920 · 30fps (giữ fps nguồn nếu 24/25/30) · ~8
 Clip `local:` không có trên máy khác → editor hiện "Thiếu clip, chọn lại file" nhưng giữ nguyên overlay/phụ đề.
 
 **Như đã dựng (16/11/2026):** `edit.json` lưu `{segments, useWatermark, overlays: {hook, price, cta}, subtitles: {enabled, style, sig, lines}, updatedAt}`; mỗi đoạn có `sourceId` và `r2Key` (thay cho chuỗi `source`), ảnh bìa là một đoạn `image` có `isCover`. Bản mới hơn (theo `updatedAt`) thắng.
+Từ phase 8.6 có thêm `voiceover: {enabled, text, voiceId, speed, clipVolume: "keep"|"low"|"off", sourceId, duration, cues: [{start, end, text}]}`; `sourceId` trỏ tới file WAV trong IndexedDB của thiết bị đã tạo.
 
 ### 9.11 Dựng hàng loạt (`#/batch`)
 Liệt kê các sản phẩm đã có dự án dựng và đủ file clip trên thiết bị này. Chọn sản phẩm, chọn thiết lập chung (watermark, chữ hook, sticker giá, lời kêu gọi: giữ/bật/tắt; phụ đề: giữ/tắt/bật theo một kiểu), rồi xuất lần lượt từng video và lưu thẳng lên kho (kèm `subs.srt` nếu có phụ đề). Nội dung chữ vẫn là của từng sản phẩm. Một video lỗi không làm dừng cả lô.
+
+### 9.12 Lồng tiếng AI (CIT Voice Studio)
+CIT Voice Studio là phần mềm TTS tiếng Việt chạy offline trên laptop của chủ dự án, API ở `http://127.0.0.1:8001` (tài liệu: `http://127.0.0.1:8001/cit-voice-studio.md`, bản 1.0.6). Dùng để đọc lời thoại kịch bản thành giọng nói cho video.
+
+- **Trình duyệt gọi thẳng CIT**, không qua Pages Functions (máy chủ Cloudflare không thấy được máy của chủ dự án). CIT cho phép CORS. Chỉ hỗ trợ CIT chạy **cùng máy** với trình duyệt (không cần khoá); gọi CIT qua mạng LAN cần khoá API thì chưa làm (luật 5: chỉ `APP_TOKEN` nằm trong `localStorage`).
+- Địa chỉ CIT mặc định `http://127.0.0.1:8001`, đổi được trong khối Lồng tiếng (nhớ trên thiết bị).
+- Khối **"Lồng tiếng AI"** trong trình dựng:
+  1. Gọi `GET /health`: không kết nối được → báo "Chưa kết nối được CIT Voice Studio…" kèm cách xử lý; `status` khác `ok` → "CIT đang tải mô hình"; `languages` khác rỗng và không có `vi` → "Mô hình đang chọn trong CIT không đọc được tiếng Việt".
+  2. `GET /voices` → ô chọn giọng (giọng đầu danh sách là mặc định). Tốc độ đọc 0,8–1,3.
+  3. Lời đọc: điền sẵn từ `script[].voiceover` của gói đăng bài (nối các nhịp, cách nhau `[nghỉ 0.3s]`), sửa được. Dùng được thẻ `[nghỉ 1s]`, `[cười]`.
+  4. "Tạo giọng đọc" → `POST /api/tts/generate-with-subtitles` (`format: "wav"`). Giữ file WAV trên thiết bị (IndexedDB, như clip nhập từ máy), nghe thử được.
+  5. Giọng đọc bắt đầu ngay sau đoạn ảnh bìa (nếu có), không thì từ giây 0. Dài hơn video thì phần thừa bị cắt và có cảnh báo kèm số giây.
+  6. **Tiếng của clip khi có giọng đọc**: chọn "Giữ nguyên" / "Nhỏ lại (25%)" / "Tắt"; mặc định "Nhỏ lại".
+  7. **Phụ đề từ giọng đọc**: nút "Dùng mốc câu của giọng đọc" ở khối Phụ đề: mỗi câu của CIT thành dòng phụ đề đúng mốc (từ trong câu rải đều theo thời lượng câu). Không cần Groq.
+- Xem trước phát giọng đọc cùng hình; xuất video thì worker giải mã WAV, trộn vào tiếng timeline rồi mã hoá AAC như bình thường.
+- Mở trên máy khác: lời đọc, giọng, tốc độ còn nguyên; file giọng đọc thiếu thì báo "Thiếu file giọng đọc, bấm Tạo giọng đọc" (giọng đọc không tải lên kho, chỉ nằm trong video thành phẩm).
+- **Ghi nhãn AI:** CIT yêu cầu cho người nghe biết đây là giọng AI (Luật AI 134/2025, Điều 11); thẻ `AI-generated` trong WAV mất khi mã hoá lại. Trình dựng nhắc: "Video có giọng đọc AI: khi đăng TikTok, bật nhãn 'Nội dung do AI tạo'." Không tự sửa caption (luật 6).
 
 ### 9.10 Hỗ trợ thiết bị
 - Chrome/Edge desktop: đầy đủ, nhanh nhất (laptop RTX dùng encoder phần cứng qua WebCodecs).

@@ -73,6 +73,17 @@ Ghi chú:
 
 Đã cài bản cũ thì vào `chrome://extensions` bấm nút tải lại của extension để nhận bản 0.2.0.
 
+## Lồng tiếng AI (CIT Voice Studio)
+
+Trình dựng video đọc lời thoại kịch bản bằng CIT Voice Studio chạy trên chính laptop đang dựng (không cần key, không qua Cloudflare).
+
+1. Mở CIT Voice Studio, chờ nó báo sẵn sàng (kiểm: mở `http://127.0.0.1:8001/health` thấy `"status":"ok"`). Mô hình phải đọc được tiếng Việt (VieNeu-TTS).
+2. Trong trình dựng, khối **Lồng tiếng AI** → **Kết nối CIT Voice Studio**. Mở app từ `https://….pages.dev` thì Chrome có thể hỏi quyền truy cập thiết bị trong mạng cục bộ: bấm **Cho phép**.
+3. Chọn giọng, sửa lời đọc nếu cần, bấm **Tạo giọng đọc**. Giọng đọc chỉ nằm trên máy này; phụ đề tự lấy theo từng câu.
+4. Khi đăng TikTok, bật nhãn "Nội dung do AI tạo".
+
+Kiểm tự động (cần CIT đang chạy và `npm run dev`): `node scripts/voice-check.mjs`.
+
 ## Cài lên điện thoại
 
 Mở địa chỉ app trên điện thoại, nhập token ở ⚙, rồi:
@@ -93,6 +104,8 @@ App cài từ màn hình chính có bộ nhớ riêng, nên cần nhập token l
 | Dòng nguồn ghi "Chưa cấu hình AI" | Chưa đặt `LLM_API_KEY` | `npx wrangler pages secret put LLM_API_KEY` rồi deploy lại |
 | Phụ đề báo "Chưa cấu hình GROQ_API_KEY" | Chưa đặt key Groq | `npx wrangler pages secret put GROQ_API_KEY` rồi deploy lại, hoặc bấm "Dùng lời thoại từ kịch bản" |
 | Phụ đề báo "hết hạn mức" | Hết quota Groq miễn phí | Đợi, hoặc dùng lời thoại từ kịch bản |
+| Lồng tiếng báo "Chưa kết nối được CIT Voice Studio" | CIT chưa mở, khác cổng, hoặc Chrome chặn quyền mạng cục bộ | Mở CIT; sửa "Địa chỉ CIT" trong khối Lồng tiếng; cho phép quyền trong biểu tượng ổ khoá trên thanh địa chỉ |
+| Lồng tiếng báo "không đọc được tiếng Việt" | CIT đang chọn mô hình giọng nước ngoài (Kokoro, Supertonic) | Trong CIT: Cài đặt → chọn lại VieNeu-TTS |
 | Sản phẩm biến mất | Đã quá 7 ngày | Gửi lại từ extension |
 
 ## Cấu trúc

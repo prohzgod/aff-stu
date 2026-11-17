@@ -18,7 +18,7 @@ export function projectSummary(project) {
 }
 
 // Tải file của từng đoạn: clip nhập từ máy lấy trong IndexedDB, file sản phẩm lấy lại từ kho.
-export async function loadSources(productId, segments) {
+export async function loadSources(productId, segments, voiceover = null) {
   const blobs = new Map();
   let missing = 0;
   for (const seg of segments) {
@@ -35,6 +35,12 @@ export async function loadSources(productId, segments) {
     else missing++;
   }
   if (missing) throw new Error(`Thiếu ${missing} file clip trên thiết bị này`);
+  // Giọng đọc AI cũng chỉ nằm trên thiết bị đã tạo nó.
+  if (voiceover?.enabled !== false && voiceover?.sourceId) {
+    const blob = await getClip(productId, voiceover.sourceId).catch(() => null);
+    if (!blob) throw new Error("Thiếu file giọng đọc trên thiết bị này");
+    blobs.set(voiceover.sourceId, blob);
+  }
   return blobs;
 }
 
@@ -52,7 +58,10 @@ export function buildJob(project, blobs, brand, logoBlob, template = {}) {
     ? { ...subs, enabled: false }
     : template.subtitles && template.subtitles !== "keep" ? { ...subs, enabled: true, style: template.subtitles } : subs;
   const wantMark = pick(template.watermark, project.useWatermark !== false) && brand?.watermark && (brand.handle || logoBlob);
+  const voice = project.voiceover;
+  const voiceBlob = voice?.enabled !== false && voice?.sourceId ? blobs.get(voice.sourceId) : null;
   return {
+    voiceover: voiceBlob ? { blob: voiceBlob, clipVolume: voice.clipVolume } : null,
     segments: project.segments.map((s) => ({ ...s, blob: blobs.get(s.sourceId) })),
     watermark: wantMark ? { handle: brand.handle, position: brand.position, logoBlob: logoBlob || null } : null,
     overlays,
