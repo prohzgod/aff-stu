@@ -239,6 +239,34 @@ button.chip { min-height: 44px; padding: 0 14px; font-size: 0.95rem; color: var(
 }
 .pkgbar .btn { flex: 1; max-width: 300px; padding: 0 10px; font-size: 0.92rem; }
 
+/* ----- trang chi tiết: tab theo bước, 2 cột trên màn hình rộng ----- */
+.detail-head { display: grid; gap: 6px; }
+.steps {
+  position: sticky; top: 56px; z-index: 4;
+  display: flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.06);
+}
+.step {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 6px; font: inherit; font-weight: 700; font-size: 0.95rem; color: var(--muted);
+  background: transparent; border: 0; border-radius: 10px; cursor: pointer; white-space: nowrap;
+}
+.step[aria-selected="true"] { background: var(--accent); color: #fff; }
+@media (max-width: 420px) { .step { font-size: 0.86rem; } }
+.step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.step-panel { display: grid; gap: var(--gap); min-width: 0; }
+.step-panel[hidden] { display: none; }
+.step-col { display: grid; gap: var(--gap); min-width: 0; align-content: start; }
+.step-col:not(:has(.card)) { display: none; } /* cột chưa có khối nào thì không chiếm chỗ */
+.slot { display: grid; gap: var(--gap); min-width: 0; }
+.slot:empty { display: none; }
+.post-files .row { justify-content: space-between; }
+@media (min-width: 900px) {
+  .step-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  [data-step-panel="product"] { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+  .step-panel:not(:has(> .step-col:has(.card) ~ .step-col:has(.card))) { grid-template-columns: minmax(0, 1fr); } /* chỉ một cột có nội dung */
+  .step-col .hooks { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ----- video thành phẩm, brand kit ----- */
 .final-grid { display: flex; gap: var(--gap); flex-wrap: wrap; align-items: flex-start; }
 .final-item { display: grid; gap: 8px; width: min(100%, 260px); }
@@ -277,6 +305,12 @@ button.chip { min-height: 44px; padding: 0 14px; font-size: 0.95rem; color: var(
 .ed-canvas { width: 100%; max-width: 300px; aspect-ratio: 9 / 16; height: auto; background: #000; border-radius: 10px; justify-self: center; }
 .ed-progress { flex: 1; min-width: 120px; height: 10px; accent-color: var(--accent); }
 .ed-result-video { width: 100%; max-width: 300px; max-height: 70vh; border-radius: 10px; background: #000; }
+.ed-quality { margin-top: 8px; }
+.ed-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ed-compare-item { margin: 0; min-width: 0; }
+.ed-compare-item video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: contain; border-radius: 10px; background: #000; }
+.ed-compare-grid.zoomed video { aspect-ratio: 1 / 1; object-fit: none; object-position: center; }
+.ed-compare-item figcaption { margin-top: 6px; font-size: 0.9rem; }
 .seg-list { display: grid; gap: 8px; min-width: 0; }
 .seg { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .seg.dragging { opacity: 0.5; }

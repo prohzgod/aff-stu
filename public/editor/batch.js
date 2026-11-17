@@ -3,6 +3,7 @@
 
 import { api } from "/lib/api.js";
 import { h, toast } from "/lib/dom.js";
+import { askNotifyPermission, notifyDone } from "/lib/notify.js";
 import { createWorker } from "./worker-client.js";
 import { readLocalProject, projectSummary, loadSources, buildJob } from "./project.js";
 import { toSrt, SUBTITLE_STYLES } from "./subtitles.js";
@@ -56,6 +57,7 @@ export function renderBatch(container) {
     cancelled = false;
     cancelButton.hidden = false;
     refresh();
+    askNotifyPermission(); // không chờ câu trả lời: xin quyền để báo khi cả lô xong
     const queue = chosen();
     const template = { watermark: tri(watermark.el.value), hook: tri(hook.el.value), price: tri(price.el.value), cta: tri(cta.el.value), subtitles: subs.el.value };
     let ok = 0, failed = 0, wakeLock = null;
@@ -92,6 +94,7 @@ export function renderBatch(container) {
     cancelButton.hidden = true;
     overall.textContent = `Xong ${ok} video${failed ? `, ${failed} lỗi` : ""}${cancelled ? ", đã dừng theo yêu cầu" : ""}.`;
     container.dataset.done = String(ok);
+    notifyDone("Dựng hàng loạt đã xong", overall.textContent);
     refresh();
   }
 

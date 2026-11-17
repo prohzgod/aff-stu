@@ -35,11 +35,11 @@ Clip/ảnh đầu vào (File từ máy, hoặc media trên R2)
 |---|---|---|
 | Chữ hook | `hooks[].onScreen` (chọn 1) | 0–3s, giữa-trên, chữ to viền đen |
 | Sticker giá | `price.current`, `price.discount` | "Chỉ 217K · -43%", hiện ở đoạn ảnh giá hoặc 3s cuối |
-| CTA | cố định / `script` nhịp cuối | "Bấm giỏ hàng 🛒" 2–3s cuối |
+| CTA | cố định / `script` nhịp cuối | "Bấm giỏ hàng 🛒" 2–3s cuối, **góc dưới bên trái** kèm mũi tên chỉ xuống chỗ TikTok đặt nút giỏ hàng (đổi 17/11/2026, trước đó nằm giữa) |
 | Watermark | brand kit (logo hoặc @kênh) | góc trên-trái, opacity 70%, suốt video |
 | Phụ đề | `/api/transcribe`, hoặc mốc câu của giọng đọc AI | xem 9.5, 9.12 |
 
-**Vùng an toàn TikTok (khung 1080x1920):** chừa ~130px trên, ~480px dưới, ~140px phải (cột nút like/share), ~44px trái. Phụ đề đặt với mép dưới ở **y = 1140** (tối đa 2 dòng), phía trên sticker giá (khoảng y 1160–1290) và CTA (khoảng y 1310–1430), để ba lớp không chồng nhau ở cuối video. Có nút "Xem lớp UI TikTok" để overlay giả lập giao diện TikTok khi preview.
+**Vùng an toàn TikTok (khung 1080x1920):** chừa ~130px trên, ~480px dưới, ~140px phải (cột nút like/share), ~44px trái. Phụ đề đặt với mép dưới ở **y = 1140** (tối đa 2 dòng), phía trên sticker giá (giữa khung, khoảng y 1144–1262) và CTA (nhãn sát mép trái, khoảng y 1272–1372, mũi tên xuống tới y 1428), để ba lớp không chồng nhau ở cuối video. Có nút "Xem lớp UI TikTok" để overlay giả lập giao diện TikTok khi preview.
 
 Font: **Be Vietnam Pro** (OFL, đủ dấu tiếng Việt) tự host `.woff2`; phải `await document.fonts.load(...)` (và trong worker dùng `FontFace` + `self.fonts.add`) trước khi vẽ, nếu không frame đầu sẽ bị font dự phòng.
 
@@ -71,6 +71,15 @@ Hai chế độ, chọn ở màn hình Xuất:
 - Trình duyệt không có WebGPU (iPhone < iOS 26, máy cũ) → ẩn nút Enhance AI, chỉ dùng Chuẩn.
 - Cache model WebSR trong Cache Storage (tải 1 lần).
 - Màn hình Xuất có nút **"So sánh"**: render 2 giây đầu ở cả 2 chế độ, hiển thị song song để quyết định có đáng chờ không.
+
+**Như đã dựng (17/11/2026):**
+- Bước làm đẹp chạy trong worker cho mọi frame clip và ảnh **hẹp hơn 1080** (`public/editor/enhance.js`); nguồn đủ rộng thì ghép thẳng. Clip có cờ xoay không qua bước này.
+- Chuẩn: một lượt WebGL2 vừa phóng lên rộng 1080 vừa làm nét (unsharp 0,4, bán kính 1 điểm ảnh đầu ra). Thiết bị không có WebGL2 trong worker thì ghép thẳng như phase 5.
+- Enhance AI: WebSR 0.1.1, mạng `websr/cnn-m` (125KB), phóng 2 lần rồi hàm ghép thu về khung 1080x1920. Không khởi động được thì báo lỗi và gợi ý dùng Chuẩn, không tự rơi về Chuẩn.
+- Mục "Chất lượng" và nút "So sánh 2 giây đầu" nằm ngay trên nút Xuất; thiết bị không có WebGPU thì ẩn cả hai. Đoạn so sánh không kèm chữ, phụ đề, watermark; có ô "Xem cỡ thật" và ước lượng thời gian xuất cả video.
+- Chế độ đã chọn không được lưu (mở lại là Chuẩn) và không nằm trong `edit.json`. Dựng hàng loạt luôn dùng Chuẩn.
+
+**Thông báo khi xuất xong (thêm 17/11/2026):** lần đầu bấm Xuất, app xin quyền thông báo của trình duyệt. Xuất xong (hoặc lỗi) mà tab đang ẩn hay cửa sổ không được chọn thì hiện thông báo của trình duyệt, bấm vào thì quay lại tab. Dựng hàng loạt báo một lần khi cả lô xong. Không có quyền hoặc trình duyệt không hỗ trợ thì bỏ qua, không báo lỗi. Đang nhìn tab thì chỉ có toast trong trang.
 
 ### 9.8 Thông số xuất (preset "TikTok")
 MP4 · H.264 High · 1080x1920 · 30fps (giữ fps nguồn nếu 24/25/30) · ~8 Mbps · AAC 48kHz stereo · `fastStart`. Tên file: `{shortName-slug}_{yyyymmdd}.mp4`.

@@ -1,4 +1,4 @@
-// Kiểm UI (phase 1–8) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
+// Kiểm UI (phase 1–8.5) bằng Chrome headless (375px) qua CDP. Cần `npm run dev` đang chạy và kho local rỗng.
 // Chạy: node scripts/ui-check.mjs [thư mục lưu ảnh chụp]
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, readdirSync, existsSync } from "node:fs";
@@ -45,8 +45,8 @@ const ev = async (expr) => {
   if (r.result.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails));
   return r.result.result.value;
 };
-const waitFor = async (expr, label) => {
-  for (let i = 0; i < 60; i++) { if (await ev(expr)) return; await sleep(150); }
+const waitFor = async (expr, label, tries = 60) => {
+  for (let i = 0; i < tries; i++) { if (await ev(expr)) return; await sleep(150); }
   throw new Error("hết giờ chờ: " + label);
 };
 const shot = async (name) => {
@@ -58,12 +58,13 @@ const check = (name, ok, extra = "") => { results.push(`${ok ? "PASS" : "FAIL"} 
 
 await send("Page.enable"); await send("Runtime.enable");
 const downloadDir = mkdtempSync(join(tmpdir(), "ui-dl-"));
-await send("Browser.grantPermissions", { origin: B, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] });
+await send("Browser.grantPermissions", { origin: B, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite", "notifications"] });
 await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloadDir });
 await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 const clipboard = () => ev("navigator.clipboard.readText()");
 const toastText = () => ev("document.querySelector('#toast').hidden ? '' : document.querySelector('#toast').textContent");
 await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
+const goStep = (step) => ev(`document.querySelector('[data-step="${step}"]').click()`); // đổi tab trên trang sản phẩm
 const noOverflow = () => ev("document.documentElement.scrollWidth <= window.innerWidth");
 
 try {
@@ -133,6 +134,28 @@ try {
 
   // ----- phase 2: gói đăng bài -----
   await waitFor("document.querySelectorAll('.hook').length === 6", "6 hook (gói tự tạo khi mở trang)");
+  // ----- trang sản phẩm chia tab theo bước (đổi 17/11/2026) -----
+  const stepInfo = () => ev(`(() => ({
+    tabs: [...document.querySelectorAll('.steps [role="tab"]')].map((t) => t.textContent).join('|'),
+    on: document.querySelector('.steps [aria-selected="true"]')?.dataset.step,
+    shown: [...document.querySelectorAll('.step-panel')].filter((p) => !p.hidden).map((p) => p.dataset.stepPanel).join(),
+    cards: Object.fromEntries([...document.querySelectorAll('.step-panel')].map((p) => [p.dataset.stepPanel, [...p.querySelectorAll('.card h2')].map((x) => x.textContent).join('|')])),
+    bar: document.querySelector('.pkgbar').getBoundingClientRect().height > 0,
+  }))()`);
+  let steps = await stepInfo();
+  check("trang sản phẩm có 4 tab theo bước, mở sẵn tab Sản phẩm, chỉ hiện một tab", steps.tabs === "Sản phẩm|Quay clip|Dựng|Đăng bài" && steps.on === "product" && steps.shown === "product", JSON.stringify(steps));
+  check("mỗi tab đúng các khối của nó", steps.cards.product === "Thông tin|Ảnh & video" && steps.cards.clip === "Tạo gói đăng bài|Hook|Prompt Google Flow|Kịch bản 8 giây" && steps.cards.edit === "Hậu kỳ|Chữ ảnh bìa" && steps.cards.post === "Gói đăng bài|Lưu ý", JSON.stringify(steps.cards));
+  check("thanh Copy ở đáy không hiện ngoài tab Đăng bài", steps.bar === false);
+  await goStep("clip");
+  steps = await stepInfo();
+  check("bấm tab Quay clip → chỉ hiện tab đó, không cuộn ngang ở 375px", steps.on === "clip" && steps.shown === "clip" && (await noOverflow()), JSON.stringify(steps));
+  await shot("2-step-clip.png");
+  await send("Page.reload");
+  await waitFor("document.querySelectorAll('.hook').length === 6", "tải lại trang ở tab Quay clip");
+  check("tải lại trang → vẫn ở tab Quay clip (nhớ theo sản phẩm)", (await stepInfo()).on === "clip");
+  await ev("document.querySelector('[data-step=\"clip\"]').focus(); document.querySelector('.steps').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))");
+  check("phím mũi tên phải chuyển sang tab Dựng", (await stepInfo()).on === "edit");
+  await goStep("clip");
   check("mở trang lần đầu → tự tạo gói, đủ 6 hook đúng thứ tự công thức", (await ev("[...document.querySelectorAll('.hook .chip')].map(c => c.textContent).join('|')")) === "Nỗi đau|Giá sốc|Bằng chứng xã hội|Tò mò|So sánh|Trải nghiệm thật");
   check("nội dung gói chứa HTML từ tiêu đề vẫn hiện dạng chữ", await ev("document.querySelectorAll('#app script, #app b, .hook img').length === 0"));
   await ev("document.querySelector('.hook [data-copy=\"spoken\"]').click()");
@@ -149,7 +172,7 @@ try {
   check("sửa bề mặt → prompt đổi theo", await ev("[...document.querySelectorAll('[data-panel=\"library\"] .prompt-text')].some(p => p.textContent.includes('a pink marble table'))"));
   await ev("document.querySelector('[data-panel=\"library\"] .prompt [data-copy=\"prompt\"]').click()");
   check("copy prompt → clipboard bắt đầu bằng 'Vertical 9:16'", (await clipboard()).startsWith("Vertical 9:16"));
-  check("kịch bản có 4 nhịp", await ev("document.querySelectorAll('.beat:not(.beat-head)').length === 4"));
+  check("kịch bản 8 giây có 3 nhịp 0-3s, 3-6s, 6-8s", (await ev("[...document.querySelectorAll('.beat:not(.beat-head) .beat-time')].map((b) => b.textContent).join()")) === "0-3s,3-6s,6-8s");
   check("có khối Lưu ý (thiếu gì thì báo)", await ev("document.querySelectorAll('.warnings li').length >= 1"));
   await ev("(() => { const t = document.querySelector('#pkg-caption'); t.value = 'Caption đã sửa'; t.dispatchEvent(new Event('input', { bubbles: true })); })()");
   await ev("document.querySelector('[data-action=\"copy-caption\"]').click()");
@@ -166,6 +189,8 @@ try {
   check("sửa caption → tự lưu, tải lại trang vẫn còn", true);
   check("tải lại trang không tạo gói mới (vẫn 6 hook, không gọi generate)", await ev("document.querySelectorAll('.hook').length === 6"));
 
+  await goStep("post");
+  check("tab Đăng bài có thanh Copy ở đáy", await ev("document.querySelector('.pkgbar').getBoundingClientRect().height > 0"));
   check("thanh dính đáy không che nội dung cuối trang", await ev("(() => { window.scrollTo(0, document.body.scrollHeight); const last = document.querySelector('#app').lastElementChild.previousElementSibling ?? document.querySelector('#app').lastElementChild; const bar = document.querySelector('.pkgbar').getBoundingClientRect(); const secs = [...document.querySelectorAll('#app section')]; return secs[secs.length - 1].getBoundingClientRect().bottom <= bar.top + 1; })()"));
   check("chi tiết có gói: không cuộn ngang ở 375px", await noOverflow());
   await shot("2-detail.png");
@@ -216,6 +241,7 @@ try {
   // Clipboard API hỏng → vẫn copy được bằng cách cũ, không có lỗi
   await ev("navigator.clipboard.writeText = () => Promise.reject(new Error('no'))");
   // execCommand("copy") cần thao tác thật của người dùng, nên bấm bằng chuột qua CDP thay vì .click()
+  await goStep("edit");
   const pt = await ev("(() => { const el = document.querySelector('.cover-chip'); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
   for (const type of ["mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
   await sleep(300);
@@ -223,6 +249,8 @@ try {
 
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(200);
+  await goStep("clip");
+  check("màn hình rộng: tab Quay clip chia 2 cột", (await ev("getComputedStyle(document.querySelector('[data-step-panel=\"clip\"]')).gridTemplateColumns.split(' ').length")) === 2);
   check("chi tiết ở 1280px: không cuộn ngang", await noOverflow());
   await shot("2-detail-desktop.png");
   await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
@@ -344,13 +372,15 @@ try {
     return {
       hookAt1: await count(1, 40, 60, 190, 40, white), hookAt5: await count(5, 40, 60, 190, 40, white),
       priceAt1: await count(1, 60, 292, 130, 26, accent), priceAt5: await count(5, 60, 292, 130, 26, accent),
-      ctaAt1: await count(1, 40, 330, 190, 26, white), ctaAt5: await count(5, 40, 330, 190, 26, white),
+      ctaAt1: await count(1, 11, 318, 130, 40, white), ctaAt5: await count(5, 11, 318, 130, 25, white),
+      ctaRightAt5: await count(5, 170, 318, 65, 40, white), arrowAt5: await count(5, 30, 346, 17, 8, white), arrowAt1: await count(1, 30, 346, 17, 8, white),
       rightColumn: await count(5, 238, 40, 30, 320, (r, g, b) => white(r, g, b) || accent(r, g, b)),
       belowSafe: await count(5, 0, 362, 270, 110, (r, g, b) => white(r, g, b) || accent(r, g, b)),
     };
   })()`);
   check("file xuất: chữ hook có ở giây 1, không còn ở giây 5", layers.hookAt1 > 100 && layers.hookAt5 === 0, JSON.stringify(layers));
   check("file xuất: sticker giá và CTA chỉ hiện ở cuối video", layers.priceAt5 > 300 && layers.priceAt1 === 0 && layers.ctaAt5 > 300 && layers.ctaAt1 === 0, JSON.stringify(layers));
+  check("file xuất: CTA nằm góc dưới bên trái (bên phải trống), có mũi tên chỉ xuống phía dưới nhãn", layers.ctaRightAt5 === 0 && layers.arrowAt5 > 40 && layers.arrowAt1 === 0, JSON.stringify(layers));
   const subsPixels = await ev(`(async () => {
     const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
     const blob = await (await fetch(document.querySelector(".ed-result video").src)).blob();
@@ -372,6 +402,86 @@ try {
   await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && document.querySelectorAll('.seg').length === 3", "mở lại trình dựng");
   check("tải lại trang: 3 đoạn còn nguyên, không đoạn nào thiếu file, điểm cắt được giữ", await ev("!document.querySelector('.seg .field-error') && document.querySelector('.ed-summary').textContent === '3 đoạn · 6.0s' && !document.querySelector('[data-action=\"export\"]').disabled"));
   check("tải lại trang: chữ hook đã sửa được giữ", (await ev("document.querySelector('[data-overlay-text=\"hook\"]').value")) === "Thử ngay ấ ệ ữ");
+  // ----- phase 8.5: chế độ xuất và nút So sánh -----
+  check("mục Chất lượng hiện khi có WebGPU, mặc định là Chuẩn, có nút So sánh", await ev("!document.querySelector('.ed-quality').hidden && document.querySelector('input[name=\"ed-quality\"]:checked').value === 'standard' && !document.querySelector('[data-action=\"compare\"]').disabled"));
+  await ev("document.querySelector('[data-action=\"compare\"]').click()");
+  await waitFor("!document.querySelector('.ed-compare').hidden", "so sánh hai chế độ", 400);
+  const compared = await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    const out = [];
+    for (const item of document.querySelectorAll(".ed-compare-item")) {
+      const video = item.querySelector("video");
+      const blob = await (await fetch(video.src)).blob();
+      const v = await new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) }).getPrimaryVideoTrack();
+      const c = (await new MB.CanvasSink(v, { width: 270, height: 480, fit: "fill" }).getCanvas(1)).canvas.getContext("2d");
+      const m = c.getImageData(135, 375, 1, 1).data, top = c.getImageData(40, 60, 190, 40).data;
+      let white = 0; for (let i = 0; i < top.length; i += 4) if (top[i] > 190 && top[i + 1] > 190 && top[i + 2] > 190) white++;
+      out.push({ quality: item.dataset.quality, label: item.querySelector("strong").textContent, caption: item.querySelector("figcaption").textContent, w: v.displayWidth, h: v.displayHeight,
+        frames: (await v.computePacketStats()).packetCount, dur: await v.computeDuration(), px: [m[0], m[1], m[2]], white, muted: video.muted, loop: video.loop });
+    }
+    return out;
+  })()`);
+  check("So sánh: hai video Chuẩn và Enhance AI đặt cạnh nhau, mỗi video 1080x1920 dài đúng 2 giây (48 frame), có ước lượng thời gian",
+    compared.length === 2 && compared.map((c) => c.quality + ":" + c.label).join() === "standard:Chuẩn,ai:Enhance AI" && compared.every((c) => c.w === 1080 && c.h === 1920 && c.frames === 48 && Math.abs(c.dur - 2) < 0.001 && c.caption.includes("ước chừng") && c.muted && c.loop), JSON.stringify(compared));
+  check("So sánh: cả hai chế độ ra đúng hình clip đầu (đỏ), không kèm chữ", compared.every((c) => c.px[0] > 180 && c.px[1] < 80 && c.px[2] < 80 && c.white === 0), JSON.stringify(compared.map((c) => [c.px, c.white])));
+  check("So sánh: không cuộn ngang, các nút xuất dùng lại được", (await noOverflow()) && await ev("!document.querySelector('[data-action=\"export\"]').disabled && document.querySelector('[data-action=\"cancel-export\"]').hidden"));
+  await ev("document.querySelector('.ed-compare').scrollIntoView()");
+  await shot("5-compare.png");
+  await ev("document.querySelector('.ed-compare button').click()");
+  check("nút Đóng ẩn khối so sánh", await ev("document.querySelector('.ed-compare').hidden"));
+  await ev("(() => { const r = document.querySelector('input[name=\"ed-quality\"][value=\"ai\"]'); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  // Giả lập đang ở cửa sổ khác: xuất xong phải có thông báo của trình duyệt.
+  await ev(`(() => { window.__notes = []; document.hasFocus = () => false;
+    ServiceWorkerRegistration.prototype.showNotification = function (title, options) { window.__notes.push({ title, body: options?.body || "" }); return Promise.resolve(); };
+    const N = window.Notification; window.Notification = function (title, options) { window.__notes.push({ title, body: options?.body || "" }); }; window.Notification.permission = N.permission; window.Notification.requestPermission = () => Promise.resolve(N.permission); })()`);
+  await ev("document.querySelector('[data-action=\"export\"]').click()");
+  await waitFor("!!document.querySelector('.ed-result:not([hidden]) video')", "xuất ở chế độ Enhance AI", 800);
+  await sleep(300);
+  const notes = await ev("({ permission: Notification.permission, notes: window.__notes })");
+  check("xuất xong khi đang ở cửa sổ khác → có thông báo trình duyệt 'Đã xuất xong video'", notes.permission === "granted" && notes.notes.length === 1 && notes.notes[0].title === "Đã xuất xong video" && notes.notes[0].body.includes("6.0s"), JSON.stringify(notes));
+  await ev("delete document.hasFocus");
+  const aiExport = await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    const blob = await (await fetch(document.querySelector(".ed-result video").src)).blob();
+    const inp = new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) });
+    const v = await inp.getPrimaryVideoTrack(), a = await inp.getPrimaryAudioTrack();
+    const cs = new MB.CanvasSink(v, { width: 270, height: 480, fit: "fill" });
+    const at = async (t) => (await cs.getCanvas(t)).canvas.getContext("2d");
+    const px = async (t) => { const m = (await at(t)).getImageData(135, 375, 1, 1).data; return [m[0], m[1], m[2]]; };
+    const top = (await at(1)).getImageData(40, 60, 190, 40).data;
+    let hook = 0; for (let i = 0; i < top.length; i += 4) if (top[i] > 190 && top[i + 1] > 190 && top[i + 2] > 190) hook++;
+    return { w: v.displayWidth, h: v.displayHeight, codec: v.codec, frames: (await v.computePacketStats()).packetCount, vdur: await v.computeDuration(), adur: await a.computeDuration(),
+      red: await px(1), blue: await px(5), hook, info: document.querySelector(".ed-result-info").textContent,
+      model: Boolean(await (await caches.open("as-models-v1")).match("/editor/vendor/weights/websr-cnn-m-v0.1.0.bin")) };
+  })()`);
+  check("xuất Enhance AI: MP4 H.264 1080x1920, đúng 144 frame, tiếng dài bằng hình, dòng thông tin ghi 'Enhance AI'",
+    aiExport.w === 1080 && aiExport.h === 1920 && aiExport.codec === "avc" && aiExport.frames === 144 && Math.abs(aiExport.adur - aiExport.vdur) < 0.06 && aiExport.info.includes("· Enhance AI ·"), JSON.stringify(aiExport));
+  check("xuất Enhance AI: đúng màu và thứ tự clip (giây 1 đỏ, giây 5 xanh), chữ hook vẫn được in sau bước làm đẹp", aiExport.red[0] > 180 && aiExport.red[2] < 80 && aiExport.blue[2] > 180 && aiExport.blue[0] < 80 && aiExport.hook > 100, JSON.stringify([aiExport.red, aiExport.blue, aiExport.hook]));
+  check("model Enhance AI được lưu trong Cache Storage sau lần dùng đầu", aiExport.model);
+  {
+    // Trình duyệt không có WebGPU (mở một Chrome thứ hai đã tắt WebGPU): mục Chất lượng và nút So sánh phải ẩn.
+    const port2 = PORT + 1;
+    const chrome2 = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${port2}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "uichk2-"))}`, "--no-first-run", "--disable-features=WebGPU", "--disable-gpu", "--window-size=375,812", "about:blank"], { stdio: "ignore" });
+    try {
+      let t2;
+      for (let i = 0; i < 50 && !t2; i++) { await sleep(200); try { t2 = (await (await fetch(`http://localhost:${port2}/json`)).json()).find((t) => t.type === "page"); } catch {} }
+      const ws2 = new WebSocket(t2.webSocketDebuggerUrl);
+      await new Promise((r) => (ws2.onopen = r));
+      let n2 = 0; const wait2 = new Map();
+      ws2.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id) wait2.get(d.id)?.(d); };
+      const ev2 = (expression) => new Promise((r) => { const i = ++n2; wait2.set(i, (d) => r(d.result?.result?.value)); ws2.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } })); });
+      await ev2(`location.href = ${JSON.stringify(B + "/")}`);
+      await sleep(1200);
+      await ev2(`localStorage.setItem('APP_TOKEN', ${JSON.stringify(TOKEN)}); location.hash = '#/p/${id}/edit'`);
+      let ready = false;
+      for (let i = 0; i < 100 && !ready; i++) { await sleep(150); ready = await ev2("document.querySelector('.editor')?.dataset.ready === '1'"); }
+      const noGpu = await ev2("(async () => ({ adapter: Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())), quality: !document.querySelector('.ed-quality').hidden, compare: document.querySelector('[data-action=\"compare\"]').offsetParent !== null, canExport: document.querySelector('.editor .field-error').hidden }))()");
+      check("không có WebGPU → mục Chất lượng và nút So sánh ẩn, vẫn xuất được chế độ Chuẩn", ready && noGpu.adapter === false && noGpu.quality === false && noGpu.compare === false && noGpu.canExport === true, JSON.stringify(noGpu));
+      ws2.close();
+    } finally {
+      chrome2.kill();
+    }
+  }
   // ----- phase 8: đồng bộ dự án dựng -----
   await waitFor("document.querySelector('.ed-sync')?.textContent === 'Đã đồng bộ'", "đồng bộ dự án lên máy chủ");
   const remoteEdit = await ev("fetch('/api/products/" + id + "/edit', { headers: { Authorization: 'Bearer ' + localStorage.getItem('APP_TOKEN') } }).then((r) => r.json())");
@@ -423,7 +533,9 @@ try {
 
   await ev("location.hash = '#/p/" + id + "'");
   await waitFor("!!document.querySelector('.final-video')", "video thành phẩm trên trang sản phẩm");
+  await goStep("edit");
   await waitFor("document.querySelector('.final-cover')?.complete && document.querySelector('.final-cover').naturalWidth > 0", "ảnh bìa trên trang sản phẩm");
+  check("tab Đăng bài có sẵn nút tải video thành phẩm và ảnh bìa cạnh caption", await ev("(() => { const links = [...document.querySelectorAll('[data-step-panel=\"post\"] .post-files a[download]')].map((a) => a.getAttribute('href')); return links.length === 2 && links[0].endsWith('/final.mp4') && links[1].endsWith('/cover.png') && !!document.querySelector('[data-step-panel=\"post\"] #pkg-caption'); })()"));
   check("trang sản phẩm có link tải phụ đề .srt", await ev("!!document.querySelector('.final-subs a[download]')"));
   check("trang sản phẩm hiện ảnh bìa 1080x1920 từ kho", await ev("(() => { const i = document.querySelector('.final-cover'); return i.naturalWidth === 1080 && i.naturalHeight === 1920 && i.getAttribute('src') === '/media/p/" + id + "/cover.png'; })()"));
   await waitFor("document.querySelector('.final-video').readyState >= 1", "video thành phẩm tải được");

@@ -41,10 +41,12 @@ test("Cocoon: đủ schema, 6 hook đúng công thức và giới hạn từ", (
   assert.ok(pkg.hooks[2].spoken.includes("229K"));
   assert.equal(pkg.coverTexts.length, 3);
   for (const c of pkg.coverTexts) assert.ok(c && words(c) <= 6, c);
-  assert.deepEqual(pkg.script.map((s) => s.time), ["0-3s", "3-10s", "10-18s", "18-22s"]);
+  assert.deepEqual(pkg.script.map((s) => s.time), ["0-3s", "3-6s", "6-8s"]); // một clip Flow 8 giây
+  assert.ok(words(pkg.script.map((s) => s.voiceover).join(" ")) <= 24, "lời thoại phải đọc vừa 8 giây");
+  assert.match(pkg.script[1].voiceover, /217K/);
   for (const s of pkg.script) for (const k of ["visual", "voiceover"]) assert.ok(s[k], `${s.time}.${k}`);
   assert.equal(pkg.script[0].voiceover, pkg.hooks[0].spoken);
-  assert.match(pkg.script[3].voiceover, /giỏ hàng/);
+  assert.match(pkg.script[2].voiceover, /giỏ hàng/);
   assert.equal(pkg.videoPrompts.length, 4);
   for (const p of pkg.videoPrompts) for (const k of ["name", "flowMode", "ingredients", "prompt"]) assert.ok(p[k], k);
   assert.match(pkg.caption, /giỏ hàng/);
@@ -314,4 +316,13 @@ test("generatePackage: 429, lỗi mạng, JSON hỏng → mẫu kèm lý do", as
     assert.match(pkg.note, re);
     assert.equal(pkg.hooks.length, 6);
   }
+});
+
+test("kịch bản 8 giây: sản phẩm không có giá vẫn đủ 3 nhịp, không quá 24 từ; AI trả nhiều nhịp thì giữ 3 nhịp đầu", () => {
+  const noPrice = templatePackage({ ...cocoon, price: {} });
+  assert.equal(noPrice.script.length, 3);
+  assert.ok(words(noPrice.script.map((s) => s.voiceover).join(" ")) <= 24);
+  assert.doesNotMatch(allText(noPrice.script), JUNK);
+  const beats = Array.from({ length: 6 }, (_, i) => ({ time: `${i}s`, visual: "Hình", voiceover: `Lời ${i}`, onScreen: "" }));
+  assert.deepEqual(normalize({ script: beats }, cocoon).script.map((s) => s.voiceover), ["Lời 0", "Lời 1", "Lời 2"]);
 });

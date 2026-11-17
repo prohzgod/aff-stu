@@ -72,7 +72,7 @@ export function createSharpener() {
     // source: VideoFrame hoặc ImageBitmap; trả hình đã phóng và làm nét, hoặc null nếu nguồn đã đủ lớn.
     process(source, width, height) {
       const scale = enhanceScale(width);
-      if (scale === 1) return null;
+      if (scale === 1 || gl.isContextLost()) return null;
       const w = Math.round(width * scale), h = Math.round(height * scale);
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       gl.viewport(0, 0, w, h);

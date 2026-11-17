@@ -15,6 +15,7 @@ const SHELL = [
   "/lib/package-text.js",
   "/lib/prompt-library.js",
   "/lib/share.js",
+  "/lib/notify.js",
   "/lib/zip.js",
   "/views/package.js",
   "/icons/icon-192.png",
@@ -52,4 +53,10 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/media/")) return;
   event.respondWith(networkFirst(request));
+});
+
+// Bấm vào thông báo "Đã xuất xong video": quay lại tab của app (hoặc mở app nếu đã đóng).
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => (list[0] ? list[0].focus() : self.clients.openWindow("/"))));
 });

@@ -9,7 +9,7 @@ import { canShareFiles, shareFiles, downloadBlob, fetchAsFile } from "/lib/share
 import { makeZip } from "/lib/zip.js";
 import { packageToText, slug } from "/lib/package-text.js";
 import { shortName } from "/lib/prompt-library.js";
-import { renderPackage } from "/views/package.js";
+import { renderPackage, PACKAGE_SLOTS } from "/views/package.js";
 
 const app = document.getElementById("app");
 let renderSeq = 0;
@@ -322,8 +322,54 @@ async function downloadZip(product, entries, pkgState, button) {
   }
 }
 
-function infoSection(product, expiresAt) {
+function detailHeader(product) {
   const price = product.price || {};
+  return h("header", { class: "detail-head" },
+    h("h1", { class: "ptitle" }, product.title),
+    h("p", { class: "price-row" },
+      h("span", { class: "price big" }, formatPrice(price.current)),
+      price.original && price.original !== price.current && h("s", { class: "muted" }, formatPrice(price.original)),
+      price.discount && h("span", { class: "badge sale" }, price.discount),
+    ),
+  );
+}
+
+// Trang chi tiết chia tab theo bước làm việc. Tab đang mở được nhớ theo sản phẩm trong phiên này.
+const STEPS = [["product", "Sản phẩm"], ["clip", "Quay clip"], ["edit", "Dựng"], ["post", "Đăng bài"]];
+
+function stepTabs(productId, panels) {
+  const key = `step:${productId}`;
+  let saved = null;
+  try { saved = sessionStorage.getItem(key); } catch { saved = null; }
+  const tabs = STEPS.map(([id, label]) => h("button", { class: "step", type: "button", role: "tab", id: `step-${id}`, "data-step": id, "aria-controls": `panel-${id}` }, label));
+  const select = (id) => {
+    for (const [i, [stepId]] of STEPS.entries()) {
+      const on = stepId === id;
+      tabs[i].setAttribute("aria-selected", String(on));
+      tabs[i].tabIndex = on ? 0 : -1;
+      panels[stepId].hidden = !on;
+    }
+    try { sessionStorage.setItem(key, id); } catch { /* không nhớ được thì thôi */ }
+  };
+  const bar = h("div", { class: "steps", role: "tablist", "aria-label": "Các bước" }, tabs);
+  bar.addEventListener("click", (e) => {
+    const id = e.target.closest?.("[data-step]")?.dataset.step;
+    if (id) { select(id); window.scrollTo({ top: 0 }); }
+  });
+  // Phím mũi tên chuyển tab, như một tablist chuẩn.
+  bar.addEventListener("keydown", (e) => {
+    const i = tabs.indexOf(document.activeElement);
+    const next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : -1;
+    if (i < 0 || next < 0 || next >= tabs.length) return;
+    e.preventDefault();
+    select(STEPS[next][0]);
+    tabs[next].focus();
+  });
+  select(STEPS.some(([id]) => id === saved) ? saved : "product");
+  return bar;
+}
+
+function infoSection(product, expiresAt) {
   const left = daysLeft(expiresAt);
   const shopUrl = safeUrl(product.url);
   const facts = [
@@ -332,13 +378,9 @@ function infoSection(product, expiresAt) {
     product.rating ? `★ ${product.rating}${product.reviewCount ? ` (${formatCount(product.reviewCount)})` : ""}` : null,
   ].filter(Boolean);
 
+  // Tiêu đề và giá nằm ở đầu trang, phía trên thanh tab (xem detailHeader).
   return h("section", { class: "card" },
-    h("h1", { class: "ptitle" }, product.title),
-    h("p", { class: "price-row" },
-      h("span", { class: "price big" }, formatPrice(price.current)),
-      price.original && price.original !== price.current && h("s", { class: "muted" }, formatPrice(price.original)),
-      price.discount && h("span", { class: "badge sale" }, price.discount),
-    ),
+    h("h2", {}, "Thông tin"),
     facts.length > 0 && h("p", { class: "muted" }, facts.join(" · ")),
     h("div", { class: "row wrap" },
       shopUrl && h("a", { class: "btn small", href: shopUrl, target: "_blank", rel: "noopener noreferrer" }, "↗ Xem trên sàn"),
@@ -482,16 +524,28 @@ async function viewDetail(id, seq) {
     subsItem && h("div", { class: "row wrap final-subs" }, h("span", { class: "muted" }, "Phụ đề (.srt)"), downloadLink(subsItem, `${slug(shortName(data.product.title))}.srt`, "phụ đề")),
   );
   const pkgState = { pkg: data.package };
-  const packageBox = h("div", { class: "pkg" });
+  const slots = Object.fromEntries(PACKAGE_SLOTS.map((name) => [name, h("div", { class: "slot", "data-slot": name })]));
+  // Ở tab Đăng bài: tải/chia sẻ thành phẩm ngay cạnh caption, khỏi phải đổi tab lúc đăng.
+  const postFiles = hasOutput && h("section", { class: "card post-files" },
+    h("h2", {}, "File để đăng"),
+    data.final && h("div", { class: "row wrap" }, h("span", {}, "Video thành phẩm"), h("span", { class: "actions push" }, shareButton(finalItem, finalName, "video thành phẩm"), downloadLink(finalItem, finalName, "video thành phẩm"))),
+    data.cover && h("div", { class: "row wrap" }, h("span", {}, "Ảnh bìa"), h("span", { class: "actions push" }, shareButton(coverItem, coverName, "ảnh bìa"), downloadLink(coverItem, coverName, "ảnh bìa"))),
+  );
+  const col = (...children) => h("div", { class: "step-col" }, children);
+  const panel = (id, ...children) => h("div", { class: "step-panel", role: "tabpanel", id: `panel-${id}`, "aria-labelledby": `step-${id}`, "data-step-panel": id }, children);
+  const panels = {
+    product: panel("product", col(infoSection(data.product, data.expiresAt)), col(mediaSection(data.product, pkgState))),
+    clip: panel("clip", col(slots.generate, slots.hooks), col(slots.prompts, slots.script)),
+    edit: panel("edit", col(finalSection), col(slots.cover)),
+    post: panel("post", col(postFiles, slots.post), col(slots.warnings), slots.bar),
+  };
   show(
     h("a", { class: "back", href: "#/" }, "‹ Danh sách"),
-    infoSection(data.product, data.expiresAt),
-    hasOutput && finalSection,
-    mediaSection(data.product, pkgState),
-    packageBox,
-    !hasOutput && finalSection,
+    detailHeader(data.product),
+    stepTabs(data.product.id, panels),
+    ...Object.values(panels),
   );
-  renderPackage(packageBox, data.product, pkgState);
+  renderPackage(slots, data.product, pkgState);
 }
 
 // ---------- router ----------

@@ -1,4 +1,5 @@
 // Các khối gói đăng bài trên trang chi tiết (docs/spec/studio.md mục 8, khối 3–9 và thanh dính đáy).
+// Trang chi tiết chia tab theo bước, nên mỗi khối được vẽ vào một chỗ riêng (slot) do trang chi tiết đưa vào.
 // Nội dung gói có thể chứa chữ lấy từ trang sàn: chỉ đưa vào DOM qua h() (text node).
 
 import { api } from "/lib/api.js";
@@ -30,12 +31,15 @@ function promptCard(p, useWhen) {
   );
 }
 
+export const PACKAGE_SLOTS = ["generate", "hooks", "prompts", "script", "cover", "post", "warnings", "bar"];
+
 /**
- * Vẽ gói đăng bài vào container.
+ * Vẽ gói đăng bài vào các slot: { generate, hooks, prompts, script, cover, post, warnings, bar } (mỗi slot là một phần tử).
  * state: { pkg, snapshot } dùng chung với trang chi tiết; snapshot() trả gói kèm phần người dùng đã sửa trên màn hình.
  * onGenerated(pkg): gọi sau mỗi lần tạo gói xong.
  */
-export function renderPackage(container, product, state, { onGenerated } = {}) {
+export function renderPackage(slots, product, state, { onGenerated } = {}) {
+  const container = slots.generate; // dùng để biết trang còn đang mở không
   let busy = false;
   let edited = false;
   let facelessUsed = true;
@@ -134,12 +138,12 @@ export function renderPackage(container, product, state, { onGenerated } = {}) {
     manual,
   );
 
-  const body = h("div", { class: "pkg-body" });
   const bar = h("div", { class: "pkgbar", hidden: true },
     h("button", { class: "btn", type: "button", "data-action": "copy-caption", onclick: () => copy(captionWithHashtags(state.snapshot())) }, "Copy caption + hashtag"),
     h("button", { class: "btn primary", type: "button", "data-action": "copy-all", onclick: () => copy(packageToText(product, state.snapshot())) }, "Copy cả gói"),
   );
-  container.replaceChildren(generator, body, bar);
+  slots.generate.replaceChildren(generator);
+  slots.bar.replaceChildren(bar);
 
   async function generate(auto) {
     if (busy) return;
@@ -291,7 +295,8 @@ export function renderPackage(container, product, state, { onGenerated } = {}) {
     const beats = list(pkg.script);
     if (!beats.length) return null;
     return h("section", { class: "card" },
-      h("div", { class: "row" }, h("h2", {}, "Kịch bản"), copyButton("Copy kịch bản", () => scriptToText(pkg), { class: "btn small push" })),
+      h("div", { class: "row" }, h("h2", {}, "Kịch bản 8 giây"), copyButton("Copy kịch bản", () => scriptToText(pkg), { class: "btn small push" })),
+      h("p", { class: "muted" }, "Cho một clip Flow: hook, sản phẩm, rồi kêu gọi bấm giỏ hàng."),
       h("div", { class: "beats" },
         h("div", { class: "beat beat-head", "aria-hidden": "true" }, h("span", {}, "Thời gian"), h("span", {}, "Hình"), h("span", {}, "Lời"), h("span", {}, "Chữ")),
         beats.map((b) => h("div", { class: "beat" },
@@ -339,8 +344,10 @@ export function renderPackage(container, product, state, { onGenerated } = {}) {
     button.textContent = pkg ? "Tạo lại" : "Tạo gói";
     status.hidden = !pkg?.note;
     status.textContent = pkg?.note || "";
-    if (!pkg) return body.replaceChildren();
-    body.replaceChildren(...[hooksSection(pkg), coverSection(pkg), promptsSection(pkg), scriptSection(pkg), postSection(pkg), warningsSection(pkg)].filter(Boolean));
+    const sections = pkg
+      ? { hooks: hooksSection(pkg), cover: coverSection(pkg), prompts: promptsSection(pkg), script: scriptSection(pkg), post: postSection(pkg), warnings: warningsSection(pkg) }
+      : {};
+    for (const name of ["hooks", "cover", "prompts", "script", "post", "warnings"]) slots[name].replaceChildren(...[sections[name]].filter(Boolean));
   }
 
   draw();

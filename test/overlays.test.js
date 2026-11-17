@@ -77,13 +77,30 @@ test("fitText: thu chữ cho tới khi vừa số dòng; không vừa thì dùng
 test("layoutOverlay: mọi lớp chữ nằm trọn trong vùng an toàn, kể cả chữ rất dài", () => {
   const texts = ["Thử ngay", "Chỉ 217K · -43%", "Bấm giỏ hàng 🛒", "Skincare mãi mà da vẫn chưa ưng thì thử ngay tinh chất bí đao này đi mọi người ơi nha nha", "x".repeat(300)];
   for (const kind of ["hook", "price", "cta"]) for (const text of texts) {
-    const { box, lines, fontSize } = layoutOverlay(kind, text, measure);
+    const { box, lines, fontSize, arrow } = layoutOverlay(kind, text, measure);
+    if (arrow) {
+      assert.ok(arrow.x - arrow.half >= SAFE.left && arrow.x + arrow.half <= 1080 - SAFE.right, "mũi tên trong vùng an toàn theo chiều ngang");
+      assert.ok(arrow.top >= box.y + box.h - 1 && arrow.bottom <= 1920 - SAFE.bottom, "mũi tên nằm dưới nhãn và trong vùng an toàn");
+    }
     assert.ok(box.x >= SAFE.left - 0.5, `${kind} trái ${box.x}`);
     assert.ok(box.x + box.w <= 1080 - SAFE.right + 0.5, `${kind} phải ${box.x + box.w}`);
     assert.ok(box.y >= SAFE.top, `${kind} trên`);
     assert.ok(box.y + box.h <= 1920 - SAFE.bottom, `${kind} dưới ${box.y + box.h}`);
     assert.ok(lines.length >= 1 && fontSize >= 40);
   }
+});
+
+test("layoutOverlay: CTA là nhãn sát mép trái kèm mũi tên chỉ xuống chỗ nút giỏ hàng; giá nằm dưới phụ đề, trên CTA", () => {
+  const price = layoutOverlay("price", "Chỉ 217K · -43%", measure).box;
+  const cta = layoutOverlay("cta", "Bấm giỏ hàng 🛒", measure);
+  assert.equal(cta.box.x, SAFE.left);
+  assert.ok(cta.box.x + cta.box.w < 700, "nhãn nằm bên trái, không trải ra giữa khung");
+  assert.ok(cta.arrow.bottom > 1400 && cta.arrow.bottom <= 1440, "đầu mũi tên sát mép dưới vùng an toàn");
+  assert.ok(cta.arrow.x > cta.box.x && cta.arrow.x < 464, "mũi tên nằm phía trên nút giỏ hàng của TikTok (x 44–464)");
+  assert.ok(price.y >= 1140, "sticker giá nằm dưới phụ đề (mép dưới phụ đề y = 1140)");
+  assert.ok(price.y + price.h <= cta.box.y);
+  assert.equal(layoutOverlay("hook", "Thử ngay", measure).arrow, undefined);
+  assert.equal(layoutOverlay("price", "Chỉ 217K", measure).arrow, undefined);
 });
 
 test("layoutOverlay: hook ở phần trên, CTA sát mép dưới vùng an toàn, giá ở giữa và không chồng nhau", () => {

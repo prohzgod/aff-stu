@@ -1,35 +1,39 @@
 // Web Worker của Hậu kỳ: đọc thông tin clip, kiểm khả năng thiết bị, và xuất MP4 1080x1920.
-// Luồng: giải mã → composeFrame → mã hoá H.264 → đóng gói MP4. Tiếng được giải mã, ghép theo timeline rồi mã hoá lại AAC.
+// Luồng: giải mã → làm đẹp hình nguồn hẹp hơn khung (enhance.js) → composeFrame → mã hoá H.264 → đóng gói MP4. Tiếng được giải mã, ghép theo timeline rồi mã hoá lại AAC.
 //
 // Tin nhắn vào:  { type: "capabilities" } | { type: "probe", id, blob } | { type: "render", job } | { type: "cancel" }
 //                job.voiceover (tuỳ chọn): { blob: WAV giọng đọc, clipVolume: "keep" | "low" | "off" }
+//                job.quality: "standard" (mặc định: phóng + làm nét) | "ai" (Enhance AI, cần WebGPU)
 //                { type: "audio", id, job }  → trả tiếng của timeline dạng WAV 16kHz mono (để gửi đi phiên âm)
-// Tin nhắn ra:   { type: "capabilities", video, audio } | { type: "probe", id, info | error }
+// Tin nhắn ra:   { type: "capabilities", video, audio, enhance } | { type: "probe", id, info | error }
 //                { type: "progress", value } | { type: "done", buffer, info } | { type: "error", message, cancelled? }
 
 import * as MB from "./vendor/mediabunny-1.66.0.min.mjs";
-import { OUTPUT, SAMPLE_RATE, buildSchedule, frameSourceTime, kenBurnsScale, outputFps, validateTimeline } from "./timeline.js";
+import { OUTPUT, SAMPLE_RATE, buildSchedule, enhanceScale, frameSourceTime, kenBurnsScale, outputFps, validateTimeline } from "./timeline.js";
 import { placeSamples, mixInto, decodeWav } from "./audio.js";
 import { CLIP_GAIN, voiceStart } from "./voice.js";
 import { composeFrame } from "./compose.js";
 import { activeOverlays } from "./overlays.js";
 import { loadFonts } from "./fonts.js";
 import { activeLine, toMono16k, encodeWav } from "./subtitles.js";
+import { createAiEnhancer, createSharpener, hasWebGpu } from "./enhance.js";
 
 const VIDEO_BITRATE = 8_000_000;
 const AUDIO_BITRATE = 160_000;
 const AUDIO_CHUNK = 4800; // 0,1 giây mỗi lần đẩy vào encoder
 
 let cancelled = false;
+let sharpener; // undefined: chưa thử tạo; null: thiết bị không có WebGL2
 
 const openInput = (blob) => new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) });
 
 async function capabilities() {
-  const [video, audio] = await Promise.all([
+  const [video, audio, enhance] = await Promise.all([
     MB.canEncodeVideo("avc", { width: OUTPUT.width, height: OUTPUT.height, bitrate: VIDEO_BITRATE }).catch(() => false),
     MB.canEncodeAudio("aac", { numberOfChannels: 2, sampleRate: SAMPLE_RATE, bitrate: AUDIO_BITRATE }).catch(() => false),
+    hasWebGpu(),
   ]);
-  return { video, audio };
+  return { video, audio, enhance }; // enhance: có WebGPU, dùng được chế độ Enhance AI
 }
 
 async function probe(blob) {
@@ -141,7 +145,32 @@ async function render(job) {
   };
   const stop = () => { if (cancelled) throw Object.assign(new Error("Đã huỷ"), { cancelled: true }); };
 
+  // Bộ làm đẹp hình nguồn. Chế độ AI không khởi động được thì báo lỗi (không lặng lẽ xuất bản Chuẩn);
+  // chế độ Chuẩn không có WebGL2 thì ghép thẳng như trước.
+  const quality = job.quality === "ai" ? "ai" : "standard";
+  let enhancer = null;
+  // raw: VideoFrame hoặc ImageBitmap. Trả hình đã làm đẹp, hoặc null nếu nguồn đã đủ rộng / không có bộ làm đẹp.
+  const enhance = async (raw, width, height) => (enhancer && enhanceScale(width) > 1 ? enhancer.process(raw, width, height) : null);
+  const clipSource = async (sample) => {
+    const plain = { width: sample.displayWidth, height: sample.displayHeight, draw: (c, x, y, w, h) => sample.draw(c, x, y, w, h) };
+    if (!enhancer || sample.rotation || enhanceScale(sample.displayWidth) === 1) return plain;
+    const frame = sample.toVideoFrame();
+    try {
+      return (await enhance(frame, sample.displayWidth, sample.displayHeight)) || plain;
+    } finally {
+      frame.close();
+    }
+  };
+
   try {
+    if (quality === "ai") {
+      enhancer = await createAiEnhancer().catch((error) => { throw new Error(`Không chạy được Enhance AI (${error?.message || "lỗi không rõ"}). Hãy xuất ở chế độ Chuẩn.`); });
+    } else {
+      // Bộ làm nét giữ một ngữ cảnh WebGL: tạo một lần, dùng lại cho mọi lần xuất.
+      if (sharpener === undefined) { try { sharpener = createSharpener(); } catch { sharpener = null; } }
+      enhancer = sharpener;
+    }
+
     // ----- tiếng -----
     const mix = await mixAudio(segments, schedule, inputFor, stop);
     await addVoiceover(mix, voiceover, segments, fps);
@@ -162,22 +191,23 @@ async function render(job) {
         const times = Array.from({ length: item.frameCount }, (_, k) => frameSourceTime(seg, k, fps));
         let k = 0;
         let last = null; // frame gần nhất, dùng lại khi clip hết hình sớm hơn điểm cắt
+        let source = null; // hình của `last`, đã qua bộ làm đẹp nếu cần
         for await (const sample of sink.samplesAtTimestamps(times)) {
           stop();
-          const current = sample || last;
-          composeFrame(ctx, {
-            source: current && { width: current.displayWidth, height: current.displayHeight, draw: (c, x, y, w, h) => current.draw(c, x, y, w, h) },
-            fit: seg.fit,
-            ...layers(seg, item.startFrame + k),
-          });
-          if (sample && sample !== last) { last?.close(); last = sample; }
+          if (sample && sample !== last) {
+            last?.close();
+            last = sample;
+            source = await clipSource(sample);
+          }
+          composeFrame(ctx, { source, fit: seg.fit, ...layers(seg, item.startFrame + k) });
           await emit(item.startFrame + k);
           k++;
         }
         last?.close();
       } else {
         const bitmap = await createImageBitmap(seg.blob);
-        const source = { width: bitmap.width, height: bitmap.height, draw: (c, x, y, w, h) => c.drawImage(bitmap, x, y, w, h) };
+        const source = (await enhance(bitmap, bitmap.width, bitmap.height))
+          || { width: bitmap.width, height: bitmap.height, draw: (c, x, y, w, h) => c.drawImage(bitmap, x, y, w, h) };
         for (let k = 0; k < item.frameCount; k++) {
           stop();
           const progress = item.frameCount > 1 ? k / (item.frameCount - 1) : 0;
@@ -203,12 +233,13 @@ async function render(job) {
     await output.finalize();
     const buffer = output.target.buffer;
     postMessage({ type: "progress", value: 1 });
-    return { buffer, info: { fps, frames: schedule.totalFrames, duration: schedule.duration, width: OUTPUT.width, height: OUTPUT.height, bytes: buffer.byteLength } };
+    return { buffer, info: { fps, frames: schedule.totalFrames, duration: schedule.duration, width: OUTPUT.width, height: OUTPUT.height, bytes: buffer.byteLength, quality, enhanced: Boolean(enhancer) } };
   } catch (error) {
     await output.cancel().catch(() => {});
     throw error;
   } finally {
     mark?.logo?.close?.();
+    enhancer?.destroy?.();
     for (const input of inputs.values()) input.dispose?.();
   }
 }

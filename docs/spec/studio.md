@@ -15,6 +15,8 @@ Quy tắc: hook TikTok Shop phải **nêu loại sản phẩm trong 1–3 giây 
 - `response_format: {type: "json_object"}`, temperature ~0.9; parse lỏng (bỏ ```json fences, regex lấy `{...}`).
 - Input gửi LLM: title, giá, giảm, đã bán, rating, shop, specifications (≤20), variants (≤10), description cắt 2.500 ký tự.
 
+- **Kịch bản cho một clip 8 giây** (đổi 17/11/2026, trước đó là 4–6 nhịp cho video 15–40 giây): `script` có đúng 3 nhịp `0-3s` hook · `3-6s` sản phẩm/giá · `6-8s` kêu gọi bấm giỏ hàng; tổng lời thoại tối đa khoảng 24 từ để đọc vừa 8 giây. AI trả nhiều hơn thì chỉ giữ 3 nhịp đầu.
+
 ### 6.3 Schema output (`package.json`)
 ```json
 {
@@ -72,18 +74,27 @@ Vertical 9:16 overhead close-up on {surface}, only hands visible. Step 1: the ha
 
 **Danh sách:** card gồm thumbnail, tiêu đề 2 dòng, giá, badge "Đã có gói"/"Chưa tạo gói", "còn N ngày". Nút ＋ mở dialog dán JSON (dùng trên điện thoại).
 
-**Chi tiết, thứ tự từ trên xuống:**
+**Chi tiết (đổi 17/11/2026): chia tab theo bước làm việc, thay cho một trang cuộn dài.** Phía trên luôn có link về danh sách, tiêu đề và giá. Dưới đó là thanh 4 tab; mỗi lúc chỉ hiện một tab; trên màn hình rộng (≥ 900px) nội dung mỗi tab chia 2 cột. Tab đang mở được nhớ theo từng sản phẩm trong phiên (quay lại từ trình dựng thì về đúng tab).
+
+| Tab | Gồm các khối (số là khối trong danh sách bên dưới) |
+|---|---|
+| **Sản phẩm** (mặc định) | 1 (shop, đã bán, ★, link sàn, hạn xoá, Xoá), 2 |
+| **Quay clip** | 3, 4, 6, 7 |
+| **Dựng** | 10 (video thành phẩm, ảnh bìa, phụ đề, nút Dựng video), 5 |
+| **Đăng bài** | nút tải/chia sẻ video thành phẩm và ảnh bìa (nếu có), 8, 9, 11 |
+
+**Các khối:**
 1. Sản phẩm: tiêu đề, giá, giá gạch, % giảm, shop, đã bán, ★, link sàn, "tự xoá sau N ngày", nút Xoá.
 2. **Ảnh & video:** lưới ảnh có nhãn "Ảnh 1…", nút ⬇ từng ảnh; video player + ⬇ + **↗ Chia sẻ** (Web Share API với file → đẩy sang app TikTok/Flow trên mobile); **⬇ Tải tất cả .zip** (ảnh + video + `goi-dang-bai.txt` + `product.json`, nén trong trình duyệt).
 3. Tạo gói: chọn tone, ô ghi chú, công tắc faceless (mặc định bật), nút Tạo/Tạo lại; khu "Chế độ thủ công" (copy prompt / dán JSON). Lần đầu mở mà chưa có gói → tự gọi generate.
 4. **Hook:** chip công thức, lời nói + chữ màn hình, 2 nút copy.
 5. **Chữ ảnh bìa:** chip bấm là copy.
 6. **Prompt Google Flow:** tab *AI đề xuất* | *Thư viện mẫu* (sửa nhân vật, bối cảnh, chọn hook làm lời thoại, lọc faceless). Mỗi prompt hiện Flow mode + ảnh nên đưa vào Ingredients + nút Copy.
-7. **Kịch bản:** bảng (mobile chuyển thành dạng thẻ) + Copy kịch bản.
+7. **Kịch bản 8 giây:** 3 nhịp cho một clip Flow, bảng (mobile chuyển thành dạng thẻ) + Copy kịch bản.
 8. **Gói đăng bài:** textarea caption / hashtag / bình luận ghim, **tự lưu (debounce 600ms) → PUT** để đồng bộ.
 9. Lưu ý (warnings).
-10. **Hậu kỳ:** nút lớn "🎬 Dựng video" → `#/p/{id}/edit` (mục 9). Nếu đã có thành phẩm: hiện video `final.mp4` + ảnh bìa + nút ⬇/↗ ngay đầu trang.
-11. **Thanh dính đáy:** "Copy caption + hashtag" · "Copy cả gói".
+10. **Hậu kỳ:** nút lớn "🎬 Dựng video" → `#/p/{id}/edit` (mục 9). Nếu đã có thành phẩm: hiện video `final.mp4` + ảnh bìa + nút ⬇/↗.
+11. **Thanh dính đáy:** "Copy caption + hashtag" · "Copy cả gói" (chỉ ở tab Đăng bài).
 
 Toast xác nhận mọi thao tác copy/lưu. Copy fallback `execCommand` khi không có Clipboard API. Download fallback `window.open` nếu media chưa lưu được về R2.
 

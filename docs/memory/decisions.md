@@ -120,3 +120,13 @@ Không có thư mục con `affiliate-studio/` như sơ đồ ở spec mục 2. `
 
 ## 2026-11-16 · Studio trước, Hậu kỳ sau
 Làm phase 1–4, dùng thật vài ngày, rồi mới thiết kế Hậu kỳ dựa trên clip Flow thật. Lý do: Studio dùng được độc lập; Hậu kỳ rủi ro kỹ thuật cao (nhất là iPhone).
+
+## 2026-11-16 · Enhance AI lỗi thì báo lỗi, không lặng lẽ xuất bản Chuẩn
+`job.quality: "ai"` mà WebSR/WebGPU không khởi động được thì lần xuất dừng với câu báo lỗi gợi ý dùng chế độ Chuẩn. Lý do: người dùng đã chọn chờ lâu để có bản đẹp hơn; trả về bản Chuẩn mà không nói thì họ tưởng đó là bản AI. Chế độ Chuẩn thì ngược lại: không có WebGL2 thì ghép thẳng như trước phase 8.5 (`info.enhanced` là `false`). Bộ làm nét WebGL2 tạo một lần cho cả đời worker; bộ AI tạo và huỷ theo từng lần xuất. Clip có cờ xoay không qua bước làm đẹp.
+
+## 2026-11-16 · Nút So sánh: không kèm chữ, xem cỡ thật, không nhớ chế độ
+Đoạn so sánh 2 giây dựng không có chữ, phụ đề, watermark (các lớp đó giống nhau ở hai chế độ, và mốc "3 giây cuối" của sticker giá sẽ rơi sai chỗ trên đoạn 2 giây). Hai video mặc định hiện phần giữa khung ở cỡ điểm ảnh thật, vì thu nhỏ cả khung thì không thấy khác biệt độ nét. Kèm ước lượng thời gian xuất cả video suy từ thời gian dựng đoạn thử. Thiết bị không có WebGPU thì ẩn cả mục "Chất lượng" lẫn nút So sánh (chỉ còn một chế độ thì không có gì để chọn hay so). Chế độ đã chọn không lưu lại và không nằm trong `edit.json`: mặc định luôn là Chuẩn như spec; dựng hàng loạt luôn dùng Chuẩn.
+
+## 2026-11-17 · Trang sản phẩm chia tab theo bước; kịch bản 8 giây; CTA góc dưới trái; thông báo khi xuất xong
+Chủ dự án thấy trang sản phẩm nhồi quá nhiều thứ vào một trang cuộn, và kịch bản 15–40 giây thừa vì mỗi clip Flow chỉ 8 giây. Chủ dự án chọn (trong ba phương án cho mỗi mục): bốn tab theo bước Sản phẩm · Quay clip · Dựng · Đăng bài; kịch bản rút còn 3 nhịp cho một clip 8 giây (không bỏ hẳn, không chỉ ẩn); CTA thành nhãn kèm mũi tên ở góc dưới trái, vẫn chỉ hiện 2,5 giây cuối. Thêm thông báo trình duyệt khi xuất xong.
+Phần tự quyết khi làm: tab mặc định là Sản phẩm và nhớ tab theo sản phẩm trong `sessionStorage`; tab Đăng bài có thêm nút tải/chia sẻ video thành phẩm để đăng mà không phải đổi tab (giữ tiêu chí phase 8 "video và caption cùng một chỗ"); thông báo chỉ hiện khi không nhìn tab; sticker giá dời lên một chút để nhường chỗ cho mũi tên của CTA. Gói đã tạo trước đó giữ kịch bản cũ cho tới khi bấm "Tạo lại".

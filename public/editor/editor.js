@@ -3,12 +3,13 @@
 
 import { api } from "/lib/api.js";
 import { h, toast } from "/lib/dom.js";
+import { askNotifyPermission, notifyDone } from "/lib/notify.js";
 import { mediaUrl } from "/lib/format.js";
 import { canShareFiles, shareFiles, downloadBlob } from "/lib/share.js";
 import { slug } from "/lib/package-text.js";
 import { shortName } from "/lib/prompt-library.js";
 import {
-  OUTPUT, LIMITS, segmentDuration, totalDuration, clampTrim, moveSegment, validateTimeline, locate, kenBurnsScale, outputFps,
+  OUTPUT, LIMITS, segmentDuration, totalDuration, clampTrim, moveSegment, validateTimeline, locate, kenBurnsScale, outputFps, headSegments,
 } from "./timeline.js";
 import {
   DEFAULT_VOICE_URL, CLIP_GAIN, CLIP_VOLUME_LABELS, SPEED, createVoiceClient, healthProblem, normalizeVoiceover, scriptText, voiceStart, voiceOverrun, cuesToLines,
@@ -22,6 +23,8 @@ import { createWorker } from "./worker-client.js";
 
 const IMAGE_SECONDS = 2;
 const seconds = (v) => `${v.toFixed(1)}s`;
+const COMPARE_SECONDS = 2;
+const estimate = (v) => (v < 90 ? `${Math.max(1, Math.round(v))} giây` : `${Math.round(v / 60)} phút`);
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 // ---------- màn hình ----------
@@ -43,6 +46,8 @@ export function renderEditor(container, product, pkg = null) {
   let canExport = false;
   let exporting = false;
   let result = null; // { blob, url, info }
+  let quality = "standard"; // chế độ xuất: "standard" (Chuẩn) | "ai" (Enhance AI, chỉ khi thiết bị có WebGPU)
+  let compareUrls = [];
   let wakeLock = null;
 
   // ----- phần tử cố định -----
@@ -62,6 +67,15 @@ export function renderEditor(container, product, pkg = null) {
   const progress = h("progress", { class: "ed-progress", max: "1", value: "0", hidden: true });
   const progressLabel = h("span", { class: "muted", hidden: true });
   const resultBox = h("section", { class: "card ed-result", hidden: true });
+  const compareBox = h("section", { class: "card ed-compare", hidden: true });
+  const qualityRadio = (value, label) => h("label", { class: "check small" },
+    h("input", { type: "radio", name: "ed-quality", value, checked: value === quality, onchange: () => { quality = value; } }), label);
+  const compareButton = h("button", { class: "btn small", type: "button", "data-action": "compare", disabled: true }, `So sánh ${COMPARE_SECONDS} giây đầu`);
+  // Chỉ hiện khi thiết bị có WebGPU; không có thì luôn xuất chế độ Chuẩn.
+  const qualityBox = h("div", { class: "ed-quality", hidden: true },
+    h("div", { class: "row wrap" }, h("strong", {}, "Chất lượng"), qualityRadio("standard", "Chuẩn (nhanh)"), qualityRadio("ai", "Enhance AI (nét hơn, chậm hơn nhiều)")),
+    h("div", { class: "row wrap" }, compareButton),
+  );
   const syncLabel = h("span", { class: "muted ed-sync", role: "status" });
   const overlayBox = h("section", { class: "card ed-overlays" });
   const coverBox = h("section", { class: "card ed-cover", hidden: true });
@@ -103,9 +117,11 @@ export function renderEditor(container, product, pkg = null) {
         h("div", { class: "row wrap" }, playButton, timeLabel),
         h("div", { class: "row wrap" }, markRow, h("label", { class: "check" }, tiktokToggle, "Xem lớp UI TikTok")),
         h("div", { class: "row wrap" }, coverButton),
+        qualityBox,
         h("div", { class: "row wrap" }, exportButton, cancelButton, progress, progressLabel),
       ),
     ),
+    compareBox,
     resultBox,
   );
 
@@ -223,6 +239,7 @@ export function renderEditor(container, product, pkg = null) {
       || (voiceMissing ? "Thiếu file giọng đọc trên thiết bị này. Tạo lại giọng đọc, hoặc bỏ chọn \"Dùng giọng đọc trong video\"." : "");
     problems.hidden = !problems.textContent;
     exportButton.disabled = exporting || !canExport || !segments.length || errors.length > 0 || missing || voiceMissing;
+    compareButton.disabled = exportButton.disabled;
   }
 
   function update(index, change) {
@@ -827,6 +844,73 @@ export function renderEditor(container, product, pkg = null) {
     drawList();
   }
 
+  const withBlobs = (list) => list.map((s) => ({ ...s, blob: sources.get(s.sourceId).blob }));
+
+  function clearCompare() {
+    for (const url of compareUrls) URL.revokeObjectURL(url);
+    compareUrls = [];
+    compareBox.hidden = true;
+    compareBox.replaceChildren();
+  }
+
+  // Dựng phần đầu video ở cả hai chế độ, đặt cạnh nhau để quyết định có đáng chờ Enhance AI không.
+  // Không kèm chữ, phụ đề, watermark: các lớp đó giống hệt nhau ở hai chế độ.
+  async function compareModes() {
+    if (exporting) return;
+    stop();
+    clearCompare();
+    setExporting(true);
+    progress.value = 0;
+    progressLabel.textContent = "0%";
+    const head = withBlobs(headSegments(segments, COMPARE_SECONDS));
+    const modes = [{ quality: "standard", label: "Chuẩn" }, { quality: "ai", label: "Enhance AI" }];
+    try {
+      for (const [i, mode] of modes.entries()) {
+        const started = performance.now();
+        const { buffer, info } = await worker.render({ segments: head, watermark: null, overlays: null, subtitles: null, quality: mode.quality }, (value) => {
+          progress.value = (i + value) / modes.length;
+          progressLabel.textContent = `${Math.round(progress.value * 100)}%`;
+        });
+        mode.url = URL.createObjectURL(new Blob([buffer], { type: "video/mp4" }));
+        compareUrls.push(mode.url);
+        mode.took = (performance.now() - started) / 1000;
+        mode.duration = info.duration;
+      }
+      drawCompare(modes);
+    } catch (err) {
+      clearCompare();
+      toast(err.cancelled ? "Đã huỷ so sánh" : `Không so sánh được: ${err.message}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function drawCompare(modes) {
+    const total = totalDuration(segments);
+    const zoom = h("input", { type: "checkbox", checked: true });
+    const grid = h("div", { class: "ed-compare-grid zoomed" }, modes.map((mode) => h("figure", { class: "ed-compare-item", "data-quality": mode.quality },
+      h("video", { src: mode.url, muted: true, loop: true, autoplay: true, playsinline: true }),
+      h("figcaption", {},
+        h("strong", {}, mode.label),
+        h("span", { class: "muted" }, ` · ${seconds(mode.duration)} dựng trong ${seconds(mode.took)}, cả video ước chừng ${estimate(mode.took / mode.duration * total)}`),
+      ),
+    )));
+    zoom.addEventListener("change", () => grid.classList.toggle("zoomed", zoom.checked));
+    // Thuộc tính muted đặt qua setAttribute không tắt tiếng thật, nên trình duyệt chặn tự phát: đặt bằng thuộc tính DOM rồi phát.
+    for (const video of grid.querySelectorAll("video")) { video.muted = true; video.play().catch(() => {}); }
+    compareBox.replaceChildren(
+      h("div", { class: "row wrap" },
+        h("h2", {}, "So sánh hai chế độ"),
+        h("button", { class: "btn small push", type: "button", onclick: clearCompare }, "Đóng"),
+      ),
+      h("label", { class: "check small" }, zoom, "Xem cỡ thật (phần giữa khung hình)"),
+      grid,
+      h("p", { class: "hint" }, "Đoạn so sánh không kèm chữ, phụ đề và watermark. Chọn chế độ ở mục Chất lượng rồi bấm Xuất video."),
+    );
+    compareBox.hidden = false;
+    compareBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
   async function exportVideo() {
     if (exporting) return;
     stop();
@@ -834,15 +918,17 @@ export function renderEditor(container, product, pkg = null) {
     setExporting(true);
     progress.value = 0;
     progressLabel.textContent = "0%";
+    askNotifyPermission(); // không chờ câu trả lời: xin quyền để báo khi xuất xong lúc đang ở tab khác
     try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { wakeLock = null; }
     const started = performance.now();
     try {
       const job = {
-        segments: segments.map((s) => ({ ...s, blob: sources.get(s.sourceId).blob })),
+        segments: withBlobs(segments),
         watermark: watermark() ? { handle: brand.handle, position: brand.position, logoBlob } : null,
         overlays,
         subtitles: { enabled: subtitles.enabled, style: subtitles.style, lines: subtitles.lines },
         voiceover: voiceActive() ? { blob: voiceBlob, clipVolume: voiceover.clipVolume } : null,
+        quality,
       };
       const { buffer, info } = await worker.render(job, (value) => {
         progress.value = value;
@@ -851,8 +937,11 @@ export function renderEditor(container, product, pkg = null) {
       const blob = new Blob([buffer], { type: "video/mp4" });
       result = { blob, url: URL.createObjectURL(blob), info: { ...info, took: (performance.now() - started) / 1000 } };
       drawResult();
+      toast("Đã xuất xong video");
+      notifyDone("Đã xuất xong video", `${shortName(product.title)} · ${seconds(info.duration)}`);
     } catch (err) {
       toast(err.cancelled ? "Đã huỷ xuất video" : `Không xuất được: ${err.message}`);
+      if (!err.cancelled) notifyDone("Không xuất được video", err.message);
     } finally {
       wakeLock?.release?.().catch(() => {});
       wakeLock = null;
@@ -885,7 +974,7 @@ export function renderEditor(container, product, pkg = null) {
     const file = () => new File([result.blob], filename, { type: "video/mp4" });
     resultBox.replaceChildren(
       h("h2", {}, "Video đã xuất"),
-      h("p", { class: "muted ed-result-info" }, `${result.info.width}x${result.info.height} · ${seconds(result.info.duration)} · ${result.info.fps}fps · ${mb}MB · xuất trong ${seconds(result.info.took)}`),
+      h("p", { class: "muted ed-result-info" }, `${result.info.width}x${result.info.height} · ${seconds(result.info.duration)} · ${result.info.fps}fps · ${mb}MB · ${result.info.quality === "ai" ? "Enhance AI" : "Chuẩn"} · xuất trong ${seconds(result.info.took)}`),
       h("video", { class: "ed-result-video", src: result.url, controls: true, playsinline: true }),
       h("div", { class: "row wrap" },
         saveButton,
@@ -901,6 +990,7 @@ export function renderEditor(container, product, pkg = null) {
   }
 
   exportButton.addEventListener("click", exportVideo);
+  compareButton.addEventListener("click", compareModes);
   cancelButton.addEventListener("click", () => worker.cancel());
 
   // ----- khởi động -----
@@ -984,6 +1074,7 @@ export function renderEditor(container, product, pkg = null) {
       if (typeof VideoEncoder !== "undefined" && typeof AudioEncoder !== "undefined") cap = await worker.capabilities();
     } catch { /* coi như không hỗ trợ */ }
     canExport = cap.video && cap.audio;
+    qualityBox.hidden = !(canExport && cap.enhance);
     if (!canExport) {
       notice.textContent = "Thiết bị này chưa xuất được video. Hãy dựng trên Chrome hoặc Edge trên máy tính. Bạn vẫn sắp xếp và xem trước được ở đây.";
       notice.hidden = false;
@@ -1006,6 +1097,7 @@ export function renderEditor(container, product, pkg = null) {
     if (syncTimer) { clearTimeout(syncTimer); pushEdit(); } // rời màn hình khi còn thay đổi chưa gửi: gửi ngay
     worker.terminate();
     clearResult();
+    clearCompare();
     for (const src of sources.values()) URL.revokeObjectURL(src.url);
     sources.clear();
     setVoiceBlob(null);

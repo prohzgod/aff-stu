@@ -1,8 +1,8 @@
 # Trạng thái
 
-**Phase hiện tại:** 8.6 · Lồng tiếng AI (CIT Voice Studio), chen trước 8.5 theo yêu cầu chủ dự án. Phase 8.5 tạm dừng. Phase 1 đến 8 code xong, chờ chủ dự án deploy và kiểm trên thiết bị thật
+**Phase hiện tại:** 8.5 (Enhance AI) và 8.6 (Lồng tiếng AI, CIT Voice Studio) code xong, đã commit; hai nhánh làm song song đã gộp lại ngày 18/11/2026. Phase 1 đến 8.6 chờ chủ dự án deploy và kiểm trên thiết bị thật
 **Thiết kế:** docs/spec/hau-ky.md mục 9.12; docs/superpowers/specs/2026-11-16-hau-ky-design.md (đã duyệt)
-**Việc kế tiếp:** chủ dự án xác nhận cách tích hợp CIT (xem "Chờ chủ dự án kiểm (phase 8.6)"); sau đó quay lại phase 8.5 (nối `enhance.js` vào `render-worker.js`)
+**Việc kế tiếp:** chạy lại `npm test` và `ui-check` trên bản đã gộp (chưa chạy); chủ dự án xác nhận cách tích hợp CIT và kiểm trên thiết bị thật (xem "Nghiệm thu gần nhất"). Phase 9 là tuỳ chọn
 
 ## Checklist phase 8.6
 - [x] Spec mục 9.12, phases, decisions
@@ -14,16 +14,38 @@
 - [x] Nghiệm thu phần kiểm được trên máy dev
 - [x] Commit (17/11/2026)
 
+## Checklist đổi yêu cầu 17/11/2026 (giao diện tab, kịch bản 8 giây, CTA góc trái, thông báo)
+- [x] Spec + decisions (xong trước khi sửa code)
+- [x] Kịch bản 3 nhịp cho một clip 8 giây (`lib/generate.js`, test)
+- [x] CTA nhãn + mũi tên ở góc dưới trái (`overlays.js`, test); sticker giá dời xuống y 1144–1262 và nhỏ hơn một cỡ để nhường chỗ
+- [x] Thông báo trình duyệt khi xuất xong (`public/lib/notify.js`; trình dựng, dựng hàng loạt; `sw.js` xử lý bấm vào thông báo)
+- [x] Trang sản phẩm chia 4 tab, 2 cột trên màn hình rộng (`app.js`, `views/package.js` vẽ theo slot)
+- [x] `ui-check.mjs` cập nhật: `npm test` 229/229, `ui-check` 137/137 (17/11/2026, kho tạm)
+- [x] Commit (gộp chung với phase 8.5)
+
+Đã kiểm trong Chrome headless: 4 tab đúng khối, nhớ tab sau khi tải lại, phím mũi tên đổi tab, không cuộn ngang ở 375px và 1280px, 2 cột ở 1280px; file xuất có CTA ở góc dưới trái kèm mũi tên, bên phải trống, chỉ ở cuối video (cũng đã nhìn frame cuối của clip Flow thật); xuất xong lúc cửa sổ không được chọn thì có thông báo "Đã xuất xong video" (hàm hiện thông báo được thay bằng bản ghi lại để đếm).
+
+Chờ chủ dự án kiểm: thông báo thật của hệ điều hành (macOS/Windows có thể chặn thông báo của Chrome ở cài đặt hệ thống) và trên điện thoại; mũi tên CTA có chỉ đúng nút giỏ hàng trên app TikTok thật không; kịch bản 8 giây khi tạo bằng AI thật (mới kiểm với gói dựng sẵn và câu trả lời giả lập). Gói đã tạo trước đó giữ kịch bản cũ tới khi bấm "Tạo lại".
+
+Tồn đọng: tab không nằm trong URL (không gửi link thẳng tới một tab được); trình dựng video vẫn là một trang riêng chưa chia lại; chưa có thông báo cho nút So sánh.
+
 ## Checklist phase 8.5
 - [x] Đưa WebSR 0.1.1 và trọng số `websr/cnn-m` vào `public/editor/vendor/` (sha256 của trọng số khớp tài liệu WebSR)
 - [x] `headSegments`, `enhanceScale` trong `timeline.js` (có test)
-- [x] `public/editor/enhance.js`: bộ làm nét WebGL2 (chế độ Chuẩn) và bộ Enhance AI (WebSR/WebGPU). ĐÃ VIẾT NHƯNG CHƯA CHẠY THỬ LẦN NÀO, chưa được import ở đâu
-- [ ] `render-worker.js`: nhận `job.quality` ("standard" | "ai"), đưa frame clip/ảnh hẹp hơn 1080 qua enhancer trước `composeFrame`; `capabilities` trả thêm `enhance`
-- [ ] Trình dựng: chọn chế độ ở khu Xuất (ẩn Enhance AI khi không có WebGPU), nút "So sánh" dựng 2 giây đầu ở cả hai chế độ
-- [ ] `scripts/ui-check.mjs`: xuất ở chế độ AI, kiểm file; kiểm nút So sánh
-- [ ] Ghi `vendor/README.md` (WebSR MIT, trọng số), spec, decisions, nghiệm thu, commit
+- [x] `public/editor/enhance.js`: bộ làm nét WebGL2 (chế độ Chuẩn) và bộ Enhance AI (WebSR/WebGPU). Đã chạy thật trong worker (xem dòng dưới)
+- [x] `render-worker.js`: nhận `job.quality` ("standard" | "ai"), đưa frame clip/ảnh hẹp hơn 1080 qua enhancer trước `composeFrame`; `capabilities` trả thêm `enhance`; `info` trả thêm `quality`, `enhanced`
+- [x] Trình dựng: chọn chế độ ở khu Xuất (ẩn Enhance AI khi không có WebGPU), nút "So sánh" dựng 2 giây đầu ở cả hai chế độ
+- [x] `scripts/ui-check.mjs`: xuất ở chế độ AI, kiểm file; kiểm nút So sánh; mở Chrome thứ hai đã tắt WebGPU để kiểm mục Chất lượng ẩn (17/11/2026: 126/126, `npm test` 224/224)
+- [x] Ghi `vendor/README.md` (WebSR MIT, trọng số), spec, decisions, nghiệm thu
+- [x] Commit
 
 Ghi chú cho người làm tiếp: Chrome headless trên máy dev có WebGPU và WebGL2 trong worker (đã thử). WebSR là bản UMD: trong module worker dùng `await import()` rồi lấy `self.WebSR`. Sau `websr.render()` phải chép canvas WebGPU sang canvas 2D ngay (đã làm trong `holder()`).
+
+Số đo ngày 16/11/2026, Chrome headless trên máy dev, clip Flow thật 720x1280 trong `example-input/` (kiểm bằng script tạm, chưa đưa vào `ui-check.mjs`): cả clip 10 giây (300 frame) xuất chế độ Chuẩn mất 1,6 giây, Enhance AI mất 47 giây (hai lần đo: 46,95 và 47,11). Đọc lại frame giây 1 của file xuất: cả hai chế độ đúng chiều, đúng màu (lệch trung bình so với nguồn phóng thẳng 0,9 và 1,5 trên thang 255), độ nét (trung bình |Laplacian|) nguồn phóng thẳng 2,10 → Chuẩn 2,77 → AI 3,52. Xuất AI → Chuẩn → AI liên tiếp trên cùng một worker đều chạy; model nằm trong Cache Storage sau lần đầu. `npm test` 224/224, `ui-check` 117/117 (từ giờ mọi lần xuất mặc định đều qua bộ làm nét). Chưa kiểm: đoạn ảnh tĩnh hẹp hơn 1080, clip có cờ xoay (đang bỏ qua bước làm đẹp), thiết bị không có WebGL2/WebGPU.
+
+Trình dựng (16/11/2026, kiểm bằng script tạm trong Chrome headless với clip Flow thật, ở 1280px và 375px): mục "Chất lượng" mặc định Chuẩn; "So sánh 2 giây đầu" ra hai video 1080 rộng dài 2,0 giây đặt cạnh nhau, tự phát, bản AI nét hơn (2,76 → 3,51), có ô "Xem cỡ thật" và ước lượng thời gian cả video (Chuẩn 3 giây, AI 38 giây; xuất thật cả clip 10 giây ở AI mất 37,4 giây); chọn Enhance AI rồi xuất thì dòng thông tin ghi "Enhance AI"; Huỷ giữa lúc so sánh báo "Đã huỷ so sánh"; không cuộn ngang ở 375px. Chạy Chrome với `--disable-features=WebGPU --disable-gpu` thì mục "Chất lượng" ẩn hẳn (cờ này dùng được cho `ui-check`). Chế độ đã chọn không được lưu: mở lại trình dựng là về Chuẩn. Dựng hàng loạt luôn dùng Chuẩn. `npm test` 224/224, `ui-check` 117/117.
+
+`ui-check.mjs` cần kho rỗng mà kho local đang có sản phẩm thật của chủ dự án: chạy server với kho tạm `npx wrangler pages dev --persist-to <thư mục tạm>` thay vì xoá.
 
 ## Checklist phase 8
 - [x] `GET/PUT /api/products/:id/edit` (`edit.json`): lưu dự án dựng, chỉ giữ trường đã biết
@@ -99,6 +121,23 @@ Ghi chú cho người làm tiếp: Chrome headless trên máy dev có WebGPU và
 (chưa có)
 
 ## Nghiệm thu gần nhất
+
+**2026-11-17 · Phase 8.5 · trên máy dev (MacBook Air M2, Chrome headless)**
+
+Đã chạy và đạt: `npm test` 224/224; `node scripts/ui-check.mjs` 126/126 (chạy trên kho tạm `--persist-to`).
+
+Tiêu chí ✅ của phase 8.5 ("Trên laptop: clip 8s 720p xuất bản Enhance trong thời gian chấp nhận được (ghi lại số giây thực đo); chữ/phụ đề không bị mờ; trên iPhone không có WebGPU thì nút tự ẩn"):
+- Thời gian: clip Flow thật 720x1280 dài **10 giây** (thư mục mẫu không có clip 8 giây) xuất Enhance AI mất **36,9 đến 47,1 giây** qua năm lần đo (24fps: khoảng 37 giây; 30fps: khoảng 47 giây); chế độ Chuẩn mất 1,6 giây. Tức khoảng 4 đến 5 giây chờ cho mỗi giây video. **"Chấp nhận được" hay không, và số đo trên laptop RTX 3050 Ti: chờ chủ dự án kiểm.**
+- Chữ và phụ đề không mờ: **đạt trên máy dev.** Xuất cùng một video có chữ hook và phụ đề ở hai chế độ rồi đọc lại frame giây 1: số điểm ảnh cạnh sắc trong vùng chữ hook là 6354 (Chuẩn) và 6352 (AI), vùng phụ đề 2429 và 2472, trong khi hình nền nét lên (2,34 → 3,06). Nhìn ảnh cắt: chữ có dấu sắc nét.
+- Không có WebGPU thì ẩn: **đạt với Chrome đã tắt WebGPU** (mục Chất lượng và nút So sánh ẩn, vẫn xuất được Chuẩn). Trên iPhone thật: **chờ chủ dự án kiểm.**
+
+**Chưa kiểm được trên máy dev:** đoạn ảnh tĩnh hẹp hơn 1080 ở chế độ AI với ảnh thật (ui-check có đoạn ảnh nhưng chỉ kiểm màu và số frame); clip có cờ xoay; thiết bị không có WebGL2 trong worker; nhiều clip khác kích thước trong một video ở chế độ AI.
+
+**Chờ chủ dự án kiểm (phase 8.5):**
+1. Trên laptop (Chrome): mở "Dựng video", thả một clip Flow 720p, bấm "So sánh 2 giây đầu". Xem hai video ở "Xem cỡ thật": bản Enhance AI có đáng chờ không. Ghi lại dòng "cả video ước chừng …".
+2. Chọn "Enhance AI", bấm "Xuất video": ghi lại số giây ở dòng thông tin ("… · Enhance AI · xuất trong …s") và báo lại; xem chữ hook, phụ đề có sắc nét không.
+3. Mở "Dựng video" trên iPhone: nếu máy không có WebGPU thì không thấy mục "Chất lượng"; nếu thấy (iOS 26 trở lên) thì thử xuất Enhance AI với clip ngắn và báo kết quả.
+4. Tải video Enhance AI lên TikTok ở chế độ riêng tư, so với bản Chuẩn sau khi TikTok nén lại.
 
 **2026-11-17 · Phase 8.6 (Lồng tiếng AI, CIT Voice Studio 1.0.6) · trên máy dev Windows**
 
@@ -253,6 +292,13 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 3. Mở app trên iPhone, nhập token, mở sản phẩm: ảnh hiện, video phát và tua được, tải thử một ảnh.
 4. Xem dòng ghi chú trong khối "Ảnh & video". Nếu có "N file chưa lưu được về kho" tức CDN thật từ chối server: báo lại để ghi vào `docs/memory/gotchas.md` và xử lý.
 
+## Tồn đọng nhỏ từ phase 8.5 (chưa sửa)
+- Bản xem trước trong trình dựng không qua bước làm nét hay Enhance AI: chỉ bản xuất và đoạn So sánh mới có.
+- Dựng hàng loạt chưa chọn được Enhance AI. Chế độ đã chọn không được nhớ giữa các lần mở.
+- Clip có cờ xoay bỏ qua bước làm đẹp. Đổi kích thước nguồn giữa chừng (nhiều clip khác cỡ) thì WebSR dựng lại mạng mỗi lần đổi, chưa đo thời gian.
+- Chỉ có một mạng (`websr/cnn-m`); chưa cho chọn mạng nhẹ hơn hay nặng hơn theo máy.
+- Hai video So sánh phát lặp độc lập, có thể lệch nhau vài frame.
+
 ## Tồn đọng nhỏ từ phase 8 (chưa sửa)
 - Đồng bộ theo kiểu "bản lưu sau cùng thắng": sửa cùng lúc trên hai máy thì bản lưu sau đè bản trước, không gộp.
 - Dựng hàng loạt chỉ làm được với sản phẩm đã sắp clip trên chính thiết bị này; không tự ghép clip cho sản phẩm chưa sắp.
@@ -273,7 +319,6 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 - Ảnh bìa không lưu lại bố cục để sửa tiếp: mở lại là làm mới.
 
 ## Tồn đọng nhỏ từ phase 5 (chưa sửa)
-- Chưa có bước làm nét sau khi phóng 720p lên 1080p (spec mục 9.7 chế độ "Chuẩn"); hiện chỉ dùng nội suy chất lượng cao của canvas. Để dành cho phase 8.5 cùng Enhance AI.
 - Xem trước dùng thẻ `<video>` nên có thể khựng nhẹ ở chỗ chuyển đoạn; bản xuất không bị.
 - Chưa kiểm tự động: nút Huỷ khi đang xuất, kéo-thả đổi thứ tự bằng chuột (nút lên/xuống thì đã kiểm), chọn lại file cho đoạn thiếu clip.
 - Giới hạn tải lên là 70MB (spec ghi 95MB) vì server phải đọc cả file vào RAM để kiểm chữ ký MP4.
@@ -298,4 +343,4 @@ Năm điểm dễ hỏng trong kế hoạch và test đang ghim:
 - Nên thêm CSP cho `public/index.html` (nhớ cho phép `connect-src` tới địa chỉ CIT, phase 8.6).
 
 ## Các phase sau
-- [ ] Phase 8.5: Enhance AI
+- [ ] Phase 9 (tuỳ chọn): fade chuyển cảnh, nhạc nền, tách nền ảnh sản phẩm cho ảnh bìa

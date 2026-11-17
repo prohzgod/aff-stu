@@ -17,8 +17,9 @@ const BOTTOM = OUTPUT.height - SAFE.bottom;
 // Mỗi loại: cỡ chữ thử lần lượt, số dòng tối đa, đệm của nền (sticker), và vị trí theo chiều dọc.
 const STYLES = {
   hook: { sizes: [96, 84, 72, 60], maxLines: 3, weight: 800, padX: 0, padY: 0, top: 250 },
-  price: { sizes: [72, 60, 50, 42], maxLines: 1, weight: 800, padX: 40, padY: 24, bottomGap: 150 },
-  cta: { sizes: [60, 52, 46, 40], maxLines: 1, weight: 800, padX: 40, padY: 22, bottomGap: 12 },
+  price: { sizes: [66, 58, 50, 42], maxLines: 1, weight: 800, padX: 40, padY: 20, bottomGap: 178 },
+  // CTA: nhãn sát mép trái, phía dưới là mũi tên chỉ xuống chỗ TikTok đặt nút giỏ hàng (góc dưới bên trái, ngoài vùng an toàn).
+  cta: { sizes: [54, 48, 42, 40], maxLines: 1, weight: 800, padX: 36, padY: 18, bottomGap: 12 + 56, align: "left", arrow: { height: 56, half: 34, offsetX: 110 } },
 };
 const LINE_HEIGHT = 1.18;
 
@@ -95,7 +96,37 @@ export function layoutOverlay(kind, text, measure) {
   const w = Math.min(AREA.w, textW + style.padX * 2);
   const h = lines.length * fontSize * LINE_HEIGHT + style.padY * 2;
   const y = style.top !== undefined ? style.top : BOTTOM - style.bottomGap - h;
-  return { kind, fontSize, lines, weight: style.weight, padY: style.padY, box: { x: CENTER_X - w / 2, y, w, h } };
+  const x = style.align === "left" ? AREA.x : CENTER_X - w / 2;
+  const layout = { kind, fontSize, lines, weight: style.weight, padY: style.padY, box: { x, y, w, h } };
+  if (style.arrow) {
+    // Mũi tên đi từ mép dưới nhãn xuống sát mép dưới vùng an toàn; x là trục, half là nửa bề rộng đầu mũi tên.
+    const half = style.arrow.half;
+    layout.arrow = { x: x + Math.max(half, Math.min(style.arrow.offsetX, w - half)), top: y + h, bottom: y + h + style.arrow.height, half };
+  }
+  return layout;
+}
+
+// Mũi tên trắng viền tối, chỉ thẳng xuống: thân ngắn rồi tới đầu tam giác.
+function drawArrow(ctx, { x, top, bottom, half }) {
+  const neck = bottom - half * 1.1; // chỗ thân nối vào đầu mũi tên
+  const stem = half * 0.42;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x - stem, top - 2);
+  ctx.lineTo(x + stem, top - 2);
+  ctx.lineTo(x + stem, neck);
+  ctx.lineTo(x + half, neck);
+  ctx.lineTo(x, bottom);
+  ctx.lineTo(x - half, neck);
+  ctx.lineTo(x - stem, neck);
+  ctx.closePath();
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.restore();
 }
 
 export function drawOverlays(ctx, list) {
@@ -116,18 +147,20 @@ export function drawOverlays(ctx, list) {
       ctx.roundRect(box.x, box.y, box.w, box.h, box.h / 2);
       ctx.fill();
     }
+    if (layout.arrow) drawArrow(ctx, layout.arrow);
+    const centerX = box.x + box.w / 2;
     lines.forEach((line, i) => {
       const y = box.y + layout.padY + fontSize * LINE_HEIGHT * (i + 0.5);
       if (item.kind === "hook") {
         ctx.lineJoin = "round";
         ctx.lineWidth = fontSize * 0.16;
         ctx.strokeStyle = "#000000";
-        ctx.strokeText(line, CENTER_X, y);
+        ctx.strokeText(line, centerX, y);
         ctx.fillStyle = "#ffffff";
       } else {
         ctx.fillStyle = item.kind === "price" ? "#ffffff" : "#111111";
       }
-      ctx.fillText(line, CENTER_X, y);
+      ctx.fillText(line, centerX, y);
     });
     ctx.restore();
   }
