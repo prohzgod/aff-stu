@@ -506,6 +506,8 @@ try {
 
   // ----- phase 8: dựng hàng loạt -----
   await waitFor("document.querySelector('.ed-sync')?.textContent === 'Đã đồng bộ'", "đồng bộ sau khi chèn ảnh bìa");
+  // Nạp video đang có trên kho vào cache của trình duyệt (như khi đã xem trang sản phẩm), rồi mới dựng đè bản mới.
+  const finalBefore = await ev("(async () => { const d = await fetch('/api/products/" + id + "', { headers: { Authorization: 'Bearer ' + localStorage.getItem('APP_TOKEN') } }).then((r) => r.json()); await (await fetch(d.final.url)).blob(); return d.final.url; })()");
   await ev("location.hash = '#/batch'");
   await waitFor("document.querySelector('.editor')?.dataset.ready === '1' && !!document.querySelector('[data-batch-row]')", "mở dựng hàng loạt");
   check("dựng hàng loạt: sản phẩm đã sắp clip được chọn sẵn, ghi rõ số đoạn và thời lượng", await ev("(() => { const r = document.querySelector('[data-batch-row=\"" + id + "\"]'); return r.querySelector('input').checked && r.querySelector('.batch-status').textContent.startsWith('4 đoạn · 6.2s') && document.querySelector('[data-action=\"batch-run\"]').textContent === 'Xuất và lưu lên kho 1 video'; })()"));
@@ -535,11 +537,19 @@ try {
   await waitFor("!!document.querySelector('.final-video')", "video thành phẩm trên trang sản phẩm");
   await goStep("edit");
   await waitFor("document.querySelector('.final-cover')?.complete && document.querySelector('.final-cover').naturalWidth > 0", "ảnh bìa trên trang sản phẩm");
-  check("tab Đăng bài có sẵn nút tải video thành phẩm và ảnh bìa cạnh caption", await ev("(() => { const links = [...document.querySelectorAll('[data-step-panel=\"post\"] .post-files a[download]')].map((a) => a.getAttribute('href')); return links.length === 2 && links[0].endsWith('/final.mp4') && links[1].endsWith('/cover.png') && !!document.querySelector('[data-step-panel=\"post\"] #pkg-caption'); })()"));
+  check("tab Đăng bài có sẵn nút tải video thành phẩm và ảnh bìa cạnh caption", await ev("(() => { const links = [...document.querySelectorAll('[data-step-panel=\"post\"] .post-files a[download]')].map((a) => a.getAttribute('href')); return links.length === 2 && links[0].includes('/final.mp4?v=') && links[1].includes('/cover.png?v=') && !!document.querySelector('[data-step-panel=\"post\"] #pkg-caption'); })()"));
   check("trang sản phẩm có link tải phụ đề .srt", await ev("!!document.querySelector('.final-subs a[download]')"));
-  check("trang sản phẩm hiện ảnh bìa 1080x1920 từ kho", await ev("(() => { const i = document.querySelector('.final-cover'); return i.naturalWidth === 1080 && i.naturalHeight === 1920 && i.getAttribute('src') === '/media/p/" + id + "/cover.png'; })()"));
+  check("trang sản phẩm hiện ảnh bìa 1080x1920 từ kho", await ev("(() => { const i = document.querySelector('.final-cover'); return i.naturalWidth === 1080 && i.naturalHeight === 1920 && i.getAttribute('src').startsWith('/media/p/" + id + "/cover.png?v='); })()"));
   await waitFor("document.querySelector('.final-video').readyState >= 1", "video thành phẩm tải được");
-  check("trang sản phẩm hiện video thành phẩm 1080x1920 từ kho, kèm nút tải", await ev("(() => { const v = document.querySelector('.final-video'); return v.getAttribute('src') === '/media/p/" + id + "/final.mp4' && v.videoWidth === 1080 && v.videoHeight === 1920 && !!document.querySelector('.final a[download]'); })()"));
+  check("trang sản phẩm hiện video thành phẩm 1080x1920 từ kho, kèm nút tải", await ev("(() => { const v = document.querySelector('.final-video'); return v.getAttribute('src').startsWith('/media/p/" + id + "/final.mp4?v=') && v.videoWidth === 1080 && v.videoHeight === 1920 && !!document.querySelector('.final a[download]'); })()"));
+  const fresh = await ev(`(async () => {
+    const MB = await import("/editor/vendor/mediabunny-1.66.0.min.mjs");
+    const src = document.querySelector(".final-video").getAttribute("src");
+    const blob = await (await fetch(src)).blob(); // cache mặc định, đúng như thẻ video
+    const v = await new MB.Input({ formats: MB.ALL_FORMATS, source: new MB.BlobSource(blob) }).getPrimaryVideoTrack();
+    return { src, frames: (await v.computePacketStats()).packetCount };
+  })()`);
+  check("lưu đè video mới → trang sản phẩm phát bản mới (149 frame), không phải bản cũ còn trong cache", fresh.src !== finalBefore && fresh.frames === 149, JSON.stringify({ finalBefore, ...fresh }));
   check("rời trình dựng: không còn worker hay thanh nào sót lại, không lỗi JavaScript", consoleErrors.length === 0, consoleErrors.join(" | "));
   await ev("fetch('/api/brandkit', { method: 'PUT', headers: { Authorization: 'Bearer ' + localStorage.getItem('APP_TOKEN'), 'Content-Type': 'application/json' }, body: JSON.stringify({ handle: '', position: 'tl', watermark: true, logo: null }) }).then((r) => r.status)");
   await send("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });

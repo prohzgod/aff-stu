@@ -459,8 +459,14 @@ test("upload final.mp4 → lưu vào p/{id}/final.mp4, list và chi tiết báo 
   assert.equal(items[0].hasFinal, true);
   assert.equal(items[0].hasPackage, false);
   const detail = await (await getHandler(ctx("GET", "/", { params: { id } }))).json();
-  assert.equal(detail.final.url, `/media/p/${id}/final.mp4`);
+  assert.match(detail.final.url, new RegExp(`^/media/p/${id}/final\\.mp4\\?v=[a-z0-9]+$`));
   assert.equal(detail.final.size, 200);
+  // Lưu đè video mới: địa chỉ phải đổi, nếu không trình duyệt phát lại bản cũ đang giữ trong cache (max-age 1 ngày).
+  assert.equal((await upload(id, "final.mp4", mp4Bytes(300))).status, 200);
+  const again = await (await getHandler(ctx("GET", "/", { params: { id } }))).json();
+  assert.equal(again.final.size, 300);
+  assert.notEqual(again.final.url, detail.final.url);
+  assert.equal(again.final.url.split("?")[0], `/media/p/${id}/final.mp4`);
   assert.ok(Date.now() - Date.parse(detail.final.uploadedAt) < 60000);
   const played = await media(`p/${id}/final.mp4`, { Range: "bytes=4-7" });
   assert.equal(played.status, 206);
@@ -546,7 +552,7 @@ test("upload cover.png → lưu đúng loại, chi tiết trả cover, /media hi
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ok: true, url: `/media/p/${id}/cover.png`, size: 300 });
   const detail = await (await getHandler(ctx("GET", "/", { params: { id } }))).json();
-  assert.equal(detail.cover.url, `/media/p/${id}/cover.png`);
+  assert.match(detail.cover.url, new RegExp(`^/media/p/${id}/cover\\.png\\?v=[a-z0-9]+$`));
   assert.equal(detail.final, null);
   const shown = await media(`p/${id}/cover.png`);
   assert.equal(shown.headers.get("content-type"), "image/png");
@@ -571,7 +577,7 @@ test("upload subs.srt → lưu được, chi tiết trả subs, /media trả v�
   const r = await upload(id, "subs.srt", new TextEncoder().encode(SRT), { "Content-Type": "application/x-subrip" });
   assert.equal(r.status, 200);
   const detail = await (await getHandler(ctx("GET", "/", { params: { id } }))).json();
-  assert.equal(detail.subs.url, `/media/p/${id}/subs.srt`);
+  assert.match(detail.subs.url, new RegExp(`^/media/p/${id}/subs\\.srt\\?v=[a-z0-9]+$`));
   const got = await media(`p/${id}/subs.srt`);
   assert.equal(got.headers.get("content-type"), "application/octet-stream");
   assert.match(got.headers.get("content-disposition"), /^attachment/);

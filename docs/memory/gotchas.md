@@ -38,3 +38,6 @@ Spec giả định 8 giây. Giới hạn 60 giây của timeline nghĩa là tố
 
 ## CIT Voice Studio: gọi từ trang HTTPS sang `http://127.0.0.1`
 Chrome coi `127.0.0.1` là an toàn nên không chặn mixed content, nhưng Chrome bản mới hỏi quyền "truy cập thiết bị trong mạng cục bộ" khi trang công khai (`*.pages.dev`) gọi vào máy. Từ chối thì `fetch` ném lỗi mạng giống như CIT chưa mở. Trên `localhost:8788` thì không hỏi. Trình dựng vì vậy chỉ tự kết nối CIT sau lần đầu người dùng bấm "Kết nối". Safari có thể chặn hẳn; dựng bằng Chrome/Edge.
+
+## File lưu đè trên kho mà giữ nguyên địa chỉ thì trình duyệt vẫn phát bản cũ
+`/media` trả `Cache-Control: private, max-age=86400`. `final.mp4`, `cover.png`, `subs.srt` luôn lưu đè cùng một key, nên dựng lại rồi lưu thì trang sản phẩm vẫn hiện video cũ tới một ngày. `getUpload()` vì vậy trả địa chỉ kèm `?v=<etag>`; chỗ nào hiển thị file lưu đè phải dùng địa chỉ này, không tự ghép `/media/<key>`.

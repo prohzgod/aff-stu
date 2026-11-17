@@ -117,6 +117,9 @@ Trình dựng (16/11/2026, kiểm bằng script tạm trong Chrome headless vớ
 - [x] Task 6: UI
 - [x] Task 7: Nghiệm thu phase 1 (phần kiểm được trên máy dev)
 
+## Sửa lỗi 17/11/2026: dựng lại và lưu lên kho mà trang sản phẩm vẫn hiện video cũ
+Chủ dự án báo. Nguyên nhân: `/media` cho trình duyệt giữ file 1 ngày và video lưu đè cùng địa chỉ. Đã sửa: địa chỉ video, ảnh bìa, phụ đề trong API kèm `?v=` đổi theo nội dung (`lib/store.js`). `npm test` 229/229, `ui-check` 138/138 (có kiểm tra mới: nạp bản cũ vào cache, dựng đè, trang sản phẩm phát bản mới). Đã commit. Bản đang deploy (nếu có) cần deploy lại mới hết lỗi.
+
 ## Vướng mắc
 (chưa có)
 
